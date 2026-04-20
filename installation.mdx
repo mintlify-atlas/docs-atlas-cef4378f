@@ -1,0 +1,70 @@
+---
+title: "Install scans2any"
+description: "Install scans2any using uv, pipx, or Docker on any platform. Requires Python 3.12 or later. Verify your install with scans2any --version."
+---
+
+scans2any is a Python package distributed via PyPI-compatible tooling. The recommended approach is `uv`, but `pipx` and Docker work equally well. All methods produce the same `scans2any` command.
+
+<Note>
+  scans2any requires **Python 3.12 or later**. If you are using the Docker image or running with `uv run`, this requirement is handled for you automatically.
+</Note>
+
+## Installation methods
+
+<CodeGroup>
+
+```bash uv venv (recommended)
+uv venv
+uv pip install .
+source .venv/bin/activate
+scans2any
+```
+
+```bash uv tool install
+uv tool install .
+```
+
+```bash pipx
+pipx install .
+```
+
+```bash uv run (no install)
+uv run scans2any
+```
+
+</CodeGroup>
+
+The `uv venv` approach installs scans2any into an isolated virtual environment and activates it in your shell. Use `uv tool install` or `pipx install` to make `scans2any` available as a global command without activating a virtual environment first. Use `uv run scans2any` to run it directly without any installation step.
+
+## Docker
+
+The provided Dockerfile lets you run scans2any without installing Python or any dependencies on your host. Mount a directory with `-v` to give the container access to your scan files.
+
+```bash
+docker build -t scans2any .
+docker run -v $(pwd):/data scans2any
+```
+
+The image is based on `ghcr.io/astral-sh/uv:python3.13-bookworm-slim` and sets `scans2any` as the entrypoint, so any arguments you pass to `docker run` after the image name are forwarded directly to the CLI.
+
+```bash
+docker run -v $(pwd):/data scans2any --nmap /data/scan.xml -w json
+```
+
+## Verify the installation
+
+After installing, run `scans2any` with no arguments to confirm it is working. You should see the logo and the help output.
+
+```bash
+scans2any
+```
+
+To check the installed version:
+
+```bash
+scans2any --version
+```
+
+<Tip>
+  Run `scans2any -W` to list all available output writers, and `scans2any -L` to list all available filters. Both commands are a quick sanity check that the tool is fully functional.
+</Tip>

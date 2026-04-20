@@ -1,0 +1,106 @@
+---
+title: "Filter output by column using regex patterns in scans2any"
+description: "Use -C, -Cv, and -Ch to keep or drop specific hosts and services by matching regex patterns against IP addresses, ports, services, banners, and more."
+---
+
+Column filtering lets you narrow down which hosts and services appear in the output by matching regular expressions against specific fields. It is implemented as a filter (`column_filter`) and is activated via the shorthand flags `-C`, `-Cv`, and `-Ch` rather than through `--enable-filters`.
+
+Multiple patterns passed to the same flag are ANDed together: every pattern must match for a row to be kept.
+
+## Filter modes
+
+The three flags differ in how broadly a match applies:
+
+| Flag | Mode | Behavior |
+|------|------|----------|
+| `-C` / `--col` | Normal (service-level) | Keep matching services; drop unmatched services. A service is also kept if the host-level fields satisfy a global pattern. |
+| `-Cv` / `--col-value` | Value mode | Like `-C`, but each service must satisfy every global pattern on its own service-level fields. Multi-value fields (`Banners`, `Services`) are trimmed to only the values that matched. |
+| `-Ch` / `--col-host` | Host mode | If the host (or any of its services) satisfies all patterns, the entire host is kept with all its services intact. |
+
+## Pattern syntax
+
+Each spec follows one of these forms. Multiple specs are ANDed together:
+
+| Spec | Meaning |
+|------|---------|
+| `col:regex` | Keep if the named column matches the regex |
+| `col:!regex` | Keep if the named column does **not** match the regex |
+| `regex` | Keep if **any** column matches the regex (global) |
+| `!regex` | Keep if **no** column matches the regex (global negation) |
+
+For case-insensitive matching, use Python's inline flag: `(?i)http`.
+
+### Valid column names
+
+- **Host-level:** `IP-Addresses`, `Hostnames`, `OS`
+- **Service-level:** `Ports`, `Services`, `Banners`
+
+Parser-specific columns (such as `http_status` from the Aquatone parser) are also valid.
+
+## Examples
+
+### Keep only HTTP and HTTPS services
+
+```bash
+scans2any --nmap scan.xml -C Services:(?i)http
+```
+
+Matches any service name containing `http` or `https` (case-insensitive).
+
+### Drop services with N/A banners
+
+```bash
+scans2any --nmap scan.xml -C Banners:!N/A
+```
+
+Keeps only services where the banner does not contain `N/A`.
+
+### Combine multiple patterns
+
+```bash
+scans2any --nmap scan.xml -C Services:(?i)http Banners:!N/A
+```
+
+Keeps services that are HTTP-related **and** do not have an N/A banner. Both conditions must be satisfied.
+
+### Global match by IP prefix (value mode)
+
+```bash
+scans2any --nmap scan.xml -Cv 192\.168\.1
+```
+
+In value mode, each service must match the pattern on its own service-level fields. This form is equivalent:
+
+```bash
+scans2any --nmap scan.xml -C 192\.168\.1 -Cv
+```
+
+### Keep entire host if port 22 is open (host mode)
+
+```bash
+scans2any --nmap scan.xml -Ch Ports:22
+```
+
+If any service on the host is on port 22, the entire host — including all other services — is kept.
+
+### Filter by a known IP range (global)
+
+```bash
+scans2any --nmap scan.xml -C 192\.168\.1
+```
+
+In normal mode, a service is kept if the IP address, hostname, OS, or any service field contains `192.168.1`. All services of a matching host survive as long as the host itself matches.
+
+## Using `--hosts-file` for list-based filtering
+
+If you have a file of IP addresses or hostnames to include, use `--hosts-file` instead of a column regex:
+
+```bash
+scans2any --nmap scan.xml --hosts-file targets.txt
+```
+
+`targets.txt` should contain one IP or hostname per line. Lines starting with `#` and blank lines are ignored. This activates the `hosts_file_filter` filter internally.
+
+<Note>
+  Column filtering is applied as part of the filter chain at priority 1, meaning it runs before most other filters. If you use `--filters` to override the default chain, include `column_filter` explicitly or use the `-C` / `-Cv` / `-Ch` shorthand which always enables it.
+</Note>

@@ -1,0 +1,104 @@
+---
+title: "Persist scan data with the project database"
+description: "Use the -p flag to save parsed infrastructure to a SQLite database and reuse it across sessions without re-parsing your scan files."
+---
+
+The project database lets you parse a set of scans once, store the result in a local SQLite file, and then query or re-export that data repeatedly without touching the original scan files again. This is especially useful for large assessments where importing dozens of Nmap or Nessus files on every run adds up.
+
+## How the project flag works
+
+Passing `-p <name>` (or `--project <name>`) tells scans2any to use `<name>.db` as a persistent store. The flag serves two purposes depending on what other inputs you provide:
+
+- **With scan inputs** — scans are parsed and the result is written into the database.
+- **Without scan inputs** — data is read back from the database and piped directly into the output writer.
+
+<Note>
+The `-p` flag uses the project name as the filename. Running `scans2any -p myproject` creates or opens `myproject.db` in the current working directory.
+</Note>
+
+## Typical workflow
+
+<Steps>
+
+<Step title="Parse scans and save to the database">
+
+Point scans2any at your scan directory and name the project. The tool auto-detects all supported file types under `/path/to/scans` and writes the merged infrastructure into `myproject.db`.
+
+```bash
+scans2any -a /path/to/scans -p myproject
+```
+</Step>
+
+<Step title="Re-export in any format without re-parsing">
+
+On subsequent runs, omit the scan inputs entirely. scans2any loads directly from the database and converts to any output format.
+
+```bash
+scans2any -p myproject -w json
+```
+</Step>
+
+<Step title="Filter from the database">
+
+Column filters work the same way against a project database as they do against freshly parsed scans. The database parser pushes simple filters down to SQL for faster retrieval.
+
+```bash
+scans2any -p myproject -C Services:http
+```
+</Step>
+
+</Steps>
+
+## Saving to the database explicitly with `-w database`
+
+You can also target the database writer directly with `-w database`. This is useful when you want to merge new scans into an existing project.
+
+```bash
+scans2any --nmap new_scan.xml -p myproject -w database
+```
+
+By default, writing merges new hosts and services into existing records. Pass `--db-clear` to wipe the project data first.
+
+```bash
+scans2any -a /path/to/scans -p myproject -w database --db-clear
+```
+
+## Database schema
+
+Each project database is a standard SQLite file. The schema contains two tables:
+
+**`hosts`**
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INTEGER | Primary key |
+| `address` | TEXT | Comma-separated IP addresses |
+| `hostnames` | TEXT | Comma-separated hostnames |
+| `os` | TEXT | Comma-separated OS strings |
+| `custom_fields` | TEXT | JSON blob for parser-specific fields |
+| `created_at` | TIMESTAMP | Row creation time |
+| `updated_at` | TIMESTAMP | Last update time |
+
+**`services`**
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INTEGER | Primary key |
+| `host_id` | INTEGER | Foreign key referencing `hosts.id` |
+| `port` | INTEGER | Port number |
+| `protocol` | TEXT | Protocol (`tcp` or `udp`) |
+| `service_names` | TEXT | Comma-separated service names |
+| `banners` | TEXT | Comma-separated banner strings |
+| `custom_fields` | TEXT | JSON blob for parser-specific fields |
+| `created_at` | TIMESTAMP | Row creation time |
+| `updated_at` | TIMESTAMP | Last update time |
+
+The `hosts` table has indexes on `address` and `hostnames`. The `services` table has indexes on `port`, `service_names`, and `host_id`. Each `(host_id, port, protocol)` combination is unique, so re-importing the same scan updates existing rows rather than creating duplicates.
+
+<Tip>
+Because the database is a plain SQLite file, you can inspect it directly with any SQLite client — for example `sqlite3 myproject.db ".tables"` — or share it with a colleague who can run their own queries against it.
+</Tip>
+
+## Performance advantage
+
+Parsing large scan collections (especially `.nessus` files) can take several seconds. Storing the result in a project database means that cost is paid exactly once. Every subsequent export or filter query reads from SQLite instead of re-parsing raw files, which is significantly faster for iterative workflows such as generating different output formats for a report.

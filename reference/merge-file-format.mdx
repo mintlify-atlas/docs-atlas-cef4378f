@@ -1,0 +1,331 @@
+---
+title: "Merge file format and conflict resolution reference"
+description: "Reference for MERGE_FILE.yaml and BUFFER_FILE.json: when they are created, their YAML structure, auto-merge rules, and the resolution workflow."
+---
+
+When scans2any combines multiple scan sources, it sometimes encounters conflicts it cannot resolve automatically — for example, two scans disagree on the service name for the same port on the same host. In these cases, scans2any writes a `MERGE_FILE.yaml` containing every unresolved conflict and pauses output so you can decide which value to keep.
+
+## When a merge file is created
+
+scans2any runs three rounds of conflict resolution before writing a merge file:
+
+1. **Internal auto-merge rules** — A built-in ruleset (`merge-rules.yaml`) covers hundreds of known service name collisions. For example, `http` + `www` on any port resolves to `http`; `http` + `https` on port 443 resolves to `https`.
+2. **User-defined auto-merge rules** — Optional rules you add to the `auto-merge` section of your own `MERGE_FILE.yaml`.
+3. **User-defined manual merge rules** — Explicit resolutions you write into the `manual-merge` section.
+
+Only if a conflict survives all three rounds does scans2any create (or update) the merge file and halt.
+
+## Files created on conflict
+
+When unresolvable conflicts are detected, two files are written:
+
+- **`MERGE_FILE.yaml`** — Contains every remaining conflict structured as editable YAML. You resolve conflicts by editing this file.
+- **`BUFFER_FILE.json`** — A snapshot of the full combined infrastructure (including unresolved conflicts) in scans2any's JSON format. Supplying this as `--json BUFFER_FILE.json` on the next run avoids re-parsing all original scan files.
+
+<Warning>
+  Do not edit `BUFFER_FILE.json`. It is a machine-generated cache. Edit only `MERGE_FILE.yaml` to resolve conflicts.
+</Warning>
+
+## MERGE_FILE.yaml structure
+
+The merge file has three top-level sections:
+
+```yaml
+# scans2any: merge file
+
+# Automatic merging rules.
+auto-merge:
+#-   service-names:
+#    - http
+#    - https
+#    port: 443
+#    key:
+#    - https
+
+# Manual merging rules.
+manual-merge:
+    192.168.1.10:
+        os:
+        - ubuntu
+        tcp_ports:
+            443:
+                banners:
+                - 'product: Apache httpd'
+    192.168.1.11:
+        tcp_ports:
+            443:
+                banners:
+                - File Browser
+            9999:
+                service_names:
+                - http
+
+# Custom entries
+custom-entries:
+#    1.1.1.1:
+#        ports:
+#        -   port: 1111/tcp
+#            service-name: test
+#            banner: Test description
+```
+
+### `auto-merge` section
+
+Rules in `auto-merge` are applied automatically on every run that uses this merge file. Each rule specifies a set of conflicting values and the single value to resolve to.
+
+```yaml
+auto-merge:
+  - service-names:
+    - http
+    - https
+    port: 443
+    key:
+    - https
+```
+
+<ResponseField name="service-names" type="array of strings">
+  The exact set of service names that must be present on the port to trigger this rule. Order does not matter.
+</ResponseField>
+
+<ResponseField name="os" type="array of strings">
+  For OS-level rules: the exact set of OS identifiers that must be present for this host to trigger the rule. Cannot be combined with `service-names` in the same rule.
+</ResponseField>
+
+<ResponseField name="port" type="integer">
+  Optional. If present, the rule only applies when the port number matches exactly.
+</ResponseField>
+
+<ResponseField name="ports" type="array of integers">
+  Optional. If present, the rule applies to any port in the list. Cannot be used together with `port`.
+</ResponseField>
+
+<ResponseField name="key" type="array of strings" required>
+  The resolved value to use when the rule matches. Must contain exactly one element after resolution (if more than one remains, the conflict is not resolved).
+</ResponseField>
+
+### `manual-merge` section
+
+`manual-merge` contains the conflicts that need your attention. The structure mirrors the [JSON infrastructure format](/reference/json-format): hosts keyed by IP address, with `tcp_ports`, `udp_ports`, and `os` sub-objects.
+
+```yaml
+manual-merge:
+    1.1.1.1:
+        tcp_ports:
+            22:
+                service_names:
+                - ssh
+                - openssh
+```
+
+To resolve this conflict, remove all but one value from each list. After editing:
+
+```yaml
+manual-merge:
+    1.1.1.1:
+        tcp_ports:
+            22:
+                service_names:
+                - ssh
+```
+
+<Note>
+  Every port in `manual-merge` must have exactly one `service_names` entry and at most one `banners` entry after you finish editing. If multiple values remain, scans2any reports the file as ambiguous and exits.
+</Note>
+
+### `custom-entries` section
+
+`custom-entries` lets you inject hosts and ports that are not present in any scan file. This is useful for adding known hosts from non-scan sources (network diagrams, asset inventories, etc.).
+
+```yaml
+custom-entries:
+    1.1.1.1:
+        ports:
+        -   port: 1111/tcp
+            service-name: test
+            banner: Test description
+    3.3.3.3:
+        ports:
+        -   port: 3333/tcp
+            service-name: service-without-banner
+```
+
+<ResponseField name="{ip-address}" type="object">
+  Top-level key: a valid IP address string.
+
+  <Expandable title="Custom entry fields">
+    <ResponseField name="ports" type="array of objects" required>
+      List of port entries to inject for this host.
+
+      <Expandable title="Port entry fields">
+        <ResponseField name="port" type="string" required>
+          Port number and protocol in `{number}/{proto}` format. Examples: `"443/tcp"`, `"53/udp"`.
+        </ResponseField>
+
+        <ResponseField name="service-name" type="string">
+          Service identifier for this port. Optional.
+        </ResponseField>
+
+        <ResponseField name="banner" type="string">
+          Banner string for this port. Optional.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="hostnames" type="array of strings">
+      DNS names to associate with this host. Optional.
+    </ResponseField>
+
+    <ResponseField name="os" type="string">
+      Operating system identifier for this host. Optional. Note: this is a single string, not an array.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Step-by-step: resolving a conflict
+
+<Steps>
+  <Step title="Reproduce the conflict">
+    Start with two JSON files that describe the same host with different service names for port 22:
+
+    **one.json**
+    ```json
+    { "1.1.1.1": { "tcp_ports": { "22": { "service_names": [ "ssh" ] } } } }
+    ```
+
+    **two.json**
+    ```json
+    { "1.1.1.1": { "tcp_ports": { "22": { "service_names": [ "openssh" ] } } } }
+    ```
+  </Step>
+
+  <Step title="Run scans2any and observe the output">
+    ```bash
+    scans2any --json one.json two.json
+    ```
+
+    scans2any combines the two files, finds that port 22 on `1.1.1.1` has two service names, tries to resolve the conflict automatically, and — because `ssh` vs `openssh` has no matching built-in rule — writes the merge file:
+
+    ```text
+    [ ! ] Conflicts found in infrastructure.
+    [ ! ] One or multiple unresolvable conflicts have been identified. A Mergefile has been written to 'MERGE_FILE.yaml' and a JSON Bufferfile has been written to 'BUFFER_FILE.json'.
+    Please edit the Mergefile to resolve the issues and then continue with: scans2any --merge-file MERGE_FILE.yaml --json BUFFER_FILE.json.
+    ```
+  </Step>
+
+  <Step title="Edit MERGE_FILE.yaml">
+    Open `MERGE_FILE.yaml`. The `manual-merge` section will contain the conflicting host:
+
+    ```yaml
+    manual-merge:
+        1.1.1.1:
+            tcp_ports:
+                22:
+                    service_names:
+                    - openssh
+                    - ssh
+    ```
+
+    Delete one of the two values. For example, keep `ssh`:
+
+    ```yaml
+    manual-merge:
+        1.1.1.1:
+            tcp_ports:
+                22:
+                    service_names:
+                    - ssh
+    ```
+
+    Save the file.
+  </Step>
+
+  <Step title="Re-run with the merge file">
+    **Option A — Use the buffer file (faster):**
+
+    The buffer file already contains the parsed and combined infrastructure. Passing it avoids re-reading `one.json` and `two.json`:
+
+    ```bash
+    scans2any --json BUFFER_FILE.json --merge-file MERGE_FILE.yaml
+    ```
+
+    **Option B — Re-run from original files:**
+
+    Pass the same original inputs plus the merge file. scans2any re-parses and re-combines, then applies the merge file to resolve the known conflict:
+
+    ```bash
+    scans2any --json one.json two.json --merge-file MERGE_FILE.yaml
+    ```
+
+    Both commands produce the same output. The buffer file approach is faster; the original-files approach is more reproducible and easier to share.
+  </Step>
+</Steps>
+
+## CLI flags
+
+<ResponseField name="--merge-file" type="string">
+  Path to a `MERGE_FILE.yaml` to apply. Defaults to `MERGE_FILE.yaml` in the current directory if not specified. The merge file is applied after auto-merge, overriding any conflicting values with the resolutions it contains.
+
+  ```bash
+  scans2any --json one.json two.json --merge-file resolved.yaml
+  ```
+</ResponseField>
+
+<ResponseField name="--ignore-conflicts" type="flag">
+  Skip conflict resolution entirely and produce output even when unresolved conflicts remain. The output will contain multiple values for conflicting fields. Useful for exploratory work where exact accuracy is not required.
+
+  ```bash
+  scans2any --nmap scan1.xml --nmap scan2.xml --ignore-conflicts
+  ```
+</ResponseField>
+
+<ResponseField name="--no-auto-merge" type="flag">
+  Disable the internal auto-merge ruleset. All conflicts — including those that would normally be resolved automatically — will be reported as conflicts. This is useful when debugging unexpected auto-merge behavior.
+
+  ```bash
+  scans2any --nmap scan.xml --no-auto-merge
+  ```
+</ResponseField>
+
+## Buffer file: when to use it
+
+The buffer file stores the fully-parsed, fully-combined infrastructure as it existed at the point where conflicts were detected. Using it on the next run skips all parsing and combination work.
+
+| Approach | Speed | Reproducibility |
+|---|---|---|
+| `--json BUFFER_FILE.json --merge-file MERGE_FILE.yaml` | Fast — no re-parsing | Less transparent; buffer file does not record its source files |
+| Original inputs + `--merge-file MERGE_FILE.yaml` | Slower — full re-parse | Fully reproducible; share the original scans and the merge file |
+
+<Tip>
+  For CI pipelines or scripted workflows, the original-inputs approach is easier to audit. For interactive sessions where you are iterating on conflict resolution, the buffer file approach is faster.
+</Tip>
+
+<Warning>
+  The buffer file records the state of the infrastructure at a point in time. If you update the underlying scan files and re-run, use the original-inputs approach so the new scan data is included. Reusing an old buffer file with changed source files will silently use stale data.
+</Warning>
+
+## Auto-merge rules reference
+
+The internal auto-merge ruleset covers OS conflicts and service name collisions. A selection of representative rules:
+
+| Conflict | Port constraint | Resolved to |
+|---|---|---|
+| `http` + `www` | any | `http` |
+| `https` + `www` | any | `https` |
+| `http` + `https` | 443 | `https` |
+| `http` + `https` | 80 | `http` |
+| `ssh` + `openssh` | — | (no built-in rule — manual resolution required) |
+| `windows` + `linux` | n/a (OS rule) | `unknown` |
+| `kerberos` + `kerberos-sec` | any | `kerberos` |
+| `microsoft-ds` + `smb` | 445 | `smb` |
+| `imap` + `imaps` | 993 | `imaps` |
+
+The full list of built-in rules is in `src/scans2any/internal/merge-rules.yaml` in the repository. You can extend the ruleset with additional `auto-merge` entries in your own `MERGE_FILE.yaml`.
+
+<CardGroup cols={2}>
+  <Card title="JSON format" icon="braces" href="/reference/json-format">
+    Structure of the JSON infrastructure format used by BUFFER_FILE.json.
+  </Card>
+  <Card title="Merging scans" icon="code-merge" href="/usage/merging-scans">
+    Conceptual guide to combining multiple scan sources.
+  </Card>
+</CardGroup>

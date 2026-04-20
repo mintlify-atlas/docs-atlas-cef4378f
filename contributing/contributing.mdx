@@ -1,0 +1,113 @@
+---
+title: "How to contribute code changes and fixes to scans2any"
+description: "Set up a development environment, follow code style and linting rules, run the test suite, and submit well-formed changes to scans2any."
+---
+
+scans2any welcomes contributions. This page covers everything you need to go from a fresh clone to a passing test suite — including tooling setup, linting rules, type checking, and how to structure your changes before opening a pull request.
+
+## Development setup
+
+scans2any uses [uv](https://github.com/astral-sh/uv) as its Python package and project manager. Do not use `pip` or `poetry`.
+
+<Steps>
+  <Step title="Install uv">
+    Follow the [uv installation guide](https://github.com/astral-sh/uv#installation) for your platform. Once installed, verify it is available:
+
+    ```bash
+    uv --version
+    ```
+  </Step>
+
+  <Step title="Install dev dependencies">
+    From the repository root, sync the project with the `dev` dependency group:
+
+    ```bash
+    uv sync --group dev
+    ```
+
+    This installs the project in editable mode along with all development tools: `pytest`, `ty`, `syrupy`, and the type stubs.
+  </Step>
+
+  <Step title="Install pre-commit hooks">
+    You can install the pre-commit hook directly from the `data/` directory:
+
+    ```bash
+    cp data/pre-commit .git/hooks
+    ```
+
+    Or use [pre-commit](https://pre-commit.com/) to manage it:
+
+    ```bash
+    pre-commit install
+    ```
+
+    The hook runs `ruff format` and `ruff check` automatically before each commit.
+  </Step>
+</Steps>
+
+## Code style
+
+scans2any uses [ruff](https://docs.astral.sh/ruff/) for both formatting and linting. Run both commands before committing:
+
+```bash
+ruff format
+ruff check
+```
+
+The active rules are defined in `ruff.toml`. Key rules enforced:
+
+| Rule | Category | Requirement |
+| ---- | -------- | ----------- |
+| `T`  | Print statements | Use `logging` instead of `print` |
+| `N`  | Naming | Follow PEP 8 naming conventions |
+| `I`  | Imports | Keep imports organized and sorted |
+| `E501` | Line length | Ignored — keep lines reasonably long |
+
+<Warning>
+  `print` statements will cause `ruff check` to fail. Use the `logging` module for all output.
+</Warning>
+
+## Type checking
+
+Run `ty` via `uv` before committing:
+
+```bash
+uv ty check
+```
+
+`ty` is listed under the `dev` dependency group in `pyproject.toml` and is installed automatically by `uv sync --group dev`.
+
+## Running tests
+
+Run the full test suite with:
+
+```bash
+uv run pytest
+```
+
+### Test structure
+
+Tests live in the `tests/` directory and are organized into four subdirectories:
+
+| Directory | Purpose |
+| --------- | ------- |
+| `unit_tests/` | Tests for individual parsers and filters in isolation |
+| `integration_tests/` | Tests for multi-file combination and host merging |
+| `performance_tests/` | Benchmarks for large scan inputs; compare against `results.json` / `results.txt` |
+| `smoke_tests/` | End-to-end CLI invocations across all supported output formats |
+
+<Tip>
+  When adding a new feature or fixing a bug, add tests in the relevant directory. Performance tests can be run with `hyperfine --warmup 1` to catch regressions before submitting.
+</Tip>
+
+### Performance benchmarks
+
+New changes must not introduce performance regressions. The `tests/performance_tests/` directory contains shell scripts (`run_all.sh`, `test_light.sh`, `test_mini.sh`) and reference result files. Run these scripts and compare output against the existing baselines before opening a pull request.
+
+## CHANGELOG
+
+Update `CHANGELOG.md` for every significant change: new features, bug fixes, and breaking changes. Follow the format used in existing entries — the structure is consistent and must be maintained.
+
+<Note>
+  When adding new CLI options or commands, also update the zsh completion file. The CHANGELOG and completion file are both required parts of a complete contribution.
+</Note>

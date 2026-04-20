@@ -1,0 +1,188 @@
+---
+title: "Create custom filters for scans2any"
+description: "Write a Python filter file with a PRIORITY constant and an apply_filter function, drop it in the filters directory, and enable it with -F."
+---
+
+scans2any ships with a set of built-in filters for cleaning up banners, hostnames, and service names, but you can extend the filter chain with your own logic. A custom filter is a single Python file placed in `src/scans2any/filters/`. It only needs two things: a `PRIORITY` constant and an `apply_filter` function.
+
+## Filter architecture
+
+Every filter file exposes the same interface:
+
+- **`PRIORITY`** (required) — an integer that controls where in the chain this filter runs. Lower numbers run first. Built-in priorities range from 1 (`column_filter`, `ip_port`, `nmap_banner`) through 5 (`use_first_entry`). Choose a value that places your filter after any data it depends on.
+- **`apply_filter`** (required) — the function that does the work. It receives either a `Host`, `Service`, or `Infrastructure` object and the parsed `args` namespace.
+- **`add_arguments`** (optional) — a function that registers extra CLI flags on the argument parser. Use this when your filter needs user-supplied configuration.
+
+## Full template
+
+```python
+from scans2any.internal import Host
+
+PRIORITY = 10  # Choose an appropriate priority
+
+def add_arguments(parser):
+    """Add command-line arguments for this filter."""
+    parser.add_argument(
+        "--my-filter-option",
+        help="Description of the option",
+        default="default_value",
+    )
+
+def apply_filter(host: Host, args):
+    """Description of what the filter does."""
+    # Filter implementation
+    pass
+```
+
+## What objects filters receive
+
+The type annotation on `apply_filter` determines what scans2any passes in:
+
+| Type hint | Scope | Called once per |
+|---|---|---|
+| `Host` | Single host | Each host in the infrastructure |
+| `Service` | Single service | Each service on each host |
+| `Infrastructure` | Entire dataset | Once per filter run |
+
+Use `Infrastructure` when your filter needs to compare or remove hosts relative to each other. Use `Host` or `Service` for self-contained per-entry logic.
+
+## Real example: `empty_host`
+
+The `empty_host` filter (priority 4) removes any host that has no services or only an `ident` service — exactly the kind of low-signal entry you want to drop before generating a report. The full source is:
+
+```python
+"""Remove hosts with no identified open services from the infrastructure."""
+
+from scans2any.internal import Infrastructure
+
+PRIORITY = 4
+
+
+def apply_filter(infra: Infrastructure, args):
+    """Filter hosts, that have no identified open ports."""
+
+    delete_service_names = ("", "ident")
+
+    infra.hosts = [
+        host
+        for host in infra.hosts
+        if host.services
+        and not (  # remove hosts with one service that has one service name that is in the delete_service_names list
+            len(host.services) == 1
+            and len(host.services[0].service_names) == 1
+            and host.services[0].service_names[0] in delete_service_names
+        )
+    ]
+```
+
+Key points from this example:
+
+- The filter takes `Infrastructure`, giving it access to the full host list.
+- It reassigns `infra.hosts` in place — scans2any reads the modified list after the filter returns.
+- No `add_arguments` is needed because the filter requires no configuration.
+
+## Another example: `ip_port` with CLI arguments
+
+The `ip_port` filter (priority 1) accepts allow- and blocklists for IP ranges and ports. It registers four CLI flags via `add_arguments` and reads them from `args` inside `apply_filter`:
+
+```python
+"""Filter hosts by IP address allow/blocklists and port allow/blocklists."""
+
+from ipaddress import ip_address, summarize_address_range
+
+from scans2any.internal import Infrastructure, printer
+
+PRIORITY = 1
+
+
+def add_arguments(parser):
+    """
+    Add arguments to the parser for the ip and port filter.
+    """
+    parser.add_argument(
+        "--ip-allowlist",
+        nargs="+",
+        help="IP ranges to allow (format: --ip-allowlist start_ip-end_ip start_ip-end_ip ...)",
+        default=[],
+    )
+    parser.add_argument(
+        "--ip-blocklist",
+        nargs="+",
+        help="IP ranges to block (format: --ip-blocklist start_ip-end_ip start_ip-end_ip ...)",
+        default=[],
+    )
+    parser.add_argument(
+        "--port-allowlist",
+        nargs="+",
+        help="Port ranges to allow (format: --port-allowlist start_port-end_port start_port-end_port ...)",
+        default=[],
+    )
+    parser.add_argument(
+        "--port-blocklist",
+        nargs="+",
+        help="Port ranges to block (format: --port-blocklist start_port-end_port start_port-end_port ...)",
+        default=[],
+    )
+
+
+def apply_filter(infra: Infrastructure, args):
+    """Filter out ips and/or ports by blocklist or by allowlist."""
+    if args.ip_allowlist:
+        allowed_ips = set()
+        for address_range in args.ip_allowlist:
+            start_ip, end_ip = address_range.split("-")
+            networks = summarize_address_range(ip_address(start_ip), ip_address(end_ip))
+            for network in networks:
+                for ip in network:
+                    allowed_ips.add(str(ip))
+        infra.hosts = [
+            h for h in infra.hosts if any(ip in allowed_ips for ip in h.address)
+        ]
+    # ... port filtering follows the same pattern
+```
+
+## PRIORITY reference
+
+| Priority | Built-in filters |
+|---|---|
+| 1 | `column_filter`, `ip_port`, `nmap_banner` |
+| 2 | `trash_banner`, `trash_hostname`, `trash_service_name` |
+| 3 | `empty_service`, `hosts_file_filter` |
+| 4 | `empty_host` |
+| 5 | `use_first_entry` |
+
+Place your filter before priority 2 if it needs to run on raw banner data, or after priority 4 if it should only see hosts that have already been cleaned.
+
+## Enabling a custom filter
+
+Custom filters are not active by default. Enable them by name (the filename without `.py`) using `-F` or `--enable-filters`:
+
+```bash
+scans2any --nmap scan.xml -F my_custom_filter
+```
+
+You can enable multiple filters at once:
+
+```bash
+scans2any --nmap scan.xml -F my_custom_filter empty_host
+```
+
+To replace the entire default filter chain with your own:
+
+```bash
+scans2any --nmap scan.xml --filters my_custom_filter trash_banner
+```
+
+List all available filters (including your custom ones) with:
+
+```bash
+scans2any -L
+```
+
+<Tip>
+Start by copying `empty_host.py` as a template — it is the simplest complete filter in the codebase and demonstrates all the required conventions without any extra complexity.
+</Tip>
+
+<Warning>
+Custom filters must be placed inside `src/scans2any/filters/` and the package must be reinstalled (or run via `uv run`) before scans2any can discover them. Filters in arbitrary directories are not loaded automatically.
+</Warning>

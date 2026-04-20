@@ -1,0 +1,380 @@
+---
+title: "Output formats and available writer options in scans2any"
+description: "Choose from fifteen writers: terminal tables, Markdown, CSV, JSON, YAML, HTML, LaTeX, Typst, Excel, Nmap scripts, Aquatone URLs, and more."
+---
+
+scans2any separates parsing from output through a writer system. After combining all input scans into a unified infrastructure model, you choose a writer with `-w` / `--writer` to control the output format. The default writer is `terminal`, which pretty-prints a table directly to your console.
+
+```bash
+scans2any --nmap scan.xml -w json
+```
+
+Run `scans2any -W` to list every writer along with its specific options.
+
+## Writers
+
+<Tabs>
+  <Tab title="Table formats">
+    ### terminal (default)
+
+    Pretty-prints a formatted table in the console using the `tabulate` package. The default table style is `fancy_grid`.
+
+    ```bash
+    # Default style
+    scans2any --nmap scan.xml
+    ```
+
+    ```bash
+    # Alternative table style
+    scans2any --nmap scan.xml --table-fmt github
+    ```
+
+    Example output:
+
+    ```text
+    ╒════════════════╤══════════════════╤══════════╤════════════╤════════════════════════════════╤═══════╕
+    │ IP-Addresses   │ Hostnames        │ Ports    │ Services   │ Banners                        │ OS    │
+    ╞════════════════╪══════════════════╪══════════╪════════════╪════════════════════════════════╪═══════╡
+    │ 188.68.47.54   │ a2f36.netcup.net │ 21/tcp   │ ftp        │ ProFTPD                        │ linux │
+    │                │ softscheck.com   │ 22/tcp   │ ssh        │ OpenSSH/8.4p1 Debian 5+deb11u4 │       │
+    │                │                  │ 53/tcp   │ domain     │                                │       │
+    │                │                  │ 80/tcp   │ http       │ nginx                          │       │
+    │                │                  │ 443/tcp  │ http       │ nginx                          │       │
+    │                │                  │ 8443/tcp │ https-alt  │ sw-cp-server                   │       │
+    ╘════════════════╧══════════════════╧══════════╧════════════╧════════════════════════════════╧═══════╛
+    ```
+
+    Available styles include `plain`, `simple`, `github`, `grid`, `fancy_grid`, `pipe`, `orgtbl`, `jira`, `presto`, `pretty`, and more. See the [tabulate documentation](https://pypi.org/project/tabulate/) for the full list.
+
+    ---
+
+    ### markdown
+
+    Generates Markdown tables. Supports `--flattened` for one row per service and `--merge-symbol` to control how multiple values in a cell are joined.
+
+    ```bash
+    scans2any --nmap scan.xml -w markdown -o report.md
+    ```
+
+    ```bash
+    # Flattened: one row per service
+    scans2any --nmap scan.xml -w markdown --flattened -o services.md
+    ```
+
+    ```bash
+    # Custom merge symbol
+    scans2any --nmap scan.xml -w markdown --merge-symbol " | " -o report.md
+    ```
+
+    Example output (multi-table mode):
+
+    ```markdown
+    | 188.68.47.54   | a2f36.netcup.net<br>softscheck.com   | linux                          |
+    |:---------------|:-------------------------------------|:-------------------------------|
+    | 21/tcp         | ftp                                  | ProFTPD                        |
+    | 22/tcp         | ssh                                  | OpenSSH/8.4p1 Debian 5+deb11u4 |
+    | 53/tcp         | domain                               |                                |
+    | 80/tcp         | http                                 | nginx                          |
+    | 443/tcp        | http                                 | nginx                          |
+    | 8443/tcp       | https-alt                            | sw-cp-server                   |
+    ```
+
+    ---
+
+    ### csv
+
+    Outputs a flattened CSV with one row per service. Use `-o` to write directly to a file.
+
+    ```bash
+    scans2any --nmap scan.xml -w csv -o hosts.csv
+    ```
+
+    Example output:
+
+    ```csv
+    IP-Addresses,Hostnames,Ports,Services,Banners,OS
+    188.68.47.54,a2f36.netcup.net - softscheck.com,21/tcp,ftp,ProFTPD,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,22/tcp,ssh,OpenSSH/8.4p1 Debian 5+deb11u4,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,53/tcp,domain,,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,80/tcp,http,nginx,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,443/tcp,http,nginx,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,8443/tcp,https\-alt,sw\-cp\-server,linux
+    ```
+
+    ---
+
+    ### html
+
+    Generates a complete HTML document with styled, striped tables. The output can be opened directly in any browser.
+
+    ```bash
+    scans2any --nmap scan.xml -w html -o report.html
+    ```
+
+    ---
+
+    ### excel
+
+    Outputs an Excel spreadsheet (`.xlsx`). When using `--multi-table`, each host gets its own worksheet. The `--flattened` option creates one row per service.
+
+    ```bash
+    scans2any --nmap scan.xml -w excel -o infra.xlsx
+    ```
+
+    ```bash
+    # Flattened with one row per service
+    scans2any --nmap scan.xml -w excel --flattened -o services.xlsx
+    ```
+  </Tab>
+
+  <Tab title="Structured data">
+    ### json
+
+    Outputs a structured JSON representation of the infrastructure. This is the only format that can also be used as input for a future scans2any call, making it ideal for caching combined scan results.
+
+    ```bash
+    scans2any --nmap scan.xml -w json -o result.json
+    ```
+
+    ```bash
+    # Cache a combined scan, then query it later
+    scans2any -a /path/to/scans -w json -o combined_infra.json
+    scans2any --json combined_infra.json -c IP-Addresses,Services -C Services:https
+    ```
+
+    Example output:
+
+    ```json
+    {
+      "188.68.47.54": {
+        "hostnames": [
+          "a2f36.netcup.net",
+          "softscheck.com"
+        ],
+        "tcp_ports": {
+          "21": {
+            "service_names": ["ftp"],
+            "banners": ["ProFTPD"]
+          },
+          "22": {
+            "service_names": ["ssh"],
+            "banners": ["OpenSSH/8.4p1 Debian 5+deb11u4"]
+          },
+          "80": {
+            "service_names": ["http"],
+            "banners": ["nginx"]
+          },
+          "443": {
+            "service_names": ["http"],
+            "banners": ["nginx"]
+          }
+        },
+        "udp_ports": {},
+        "os": ["linux"]
+      }
+    }
+    ```
+
+    ---
+
+    ### yaml
+
+    Outputs a structured YAML representation. The schema mirrors the JSON output.
+
+    ```bash
+    scans2any --nmap scan.xml -w yaml -o infrastructure.yml
+    ```
+
+    Example output:
+
+    ```yaml
+    188.68.47.54:
+        hostnames:
+        - a2f36.netcup.net
+        - softscheck.com
+        tcp_ports:
+            21:
+                service_names:
+                - ftp
+                banners:
+                - ProFTPD
+            22:
+                service_names:
+                - ssh
+                banners:
+                - OpenSSH/8.4p1 Debian 5+deb11u4
+            80:
+                service_names:
+                - http
+                banners:
+                - nginx
+        udp_ports: {}
+        os:
+        - linux
+    ```
+
+    ---
+
+    ### xml
+
+    Outputs a structured XML document representing the infrastructure.
+
+    ```bash
+    scans2any --nmap scan.xml -w xml -o infrastructure.xml
+    ```
+  </Tab>
+
+  <Tab title="Document formats">
+    ### latex
+
+    Generates a complete LaTeX document with `longtable` tables. Compile the output with `pdflatex` (run twice for correct table formatting) or `latexmk`.
+
+    ```bash
+    scans2any --nmap scan.xml -w latex -o report.tex
+    ```
+
+    ```bash
+    pdflatex report.tex && pdflatex report.tex
+    ```
+
+    ---
+
+    ### typst
+
+    Generates a [Typst](https://typst.app/) table document — a modern, fast alternative to LaTeX.
+
+    ```bash
+    scans2any --nmap scan.xml -w typst -o report.typ
+    ```
+
+    ```bash
+    typst compile report.typ
+    ```
+
+    Example output:
+
+    ```typst
+    #set page(flipped: true)
+
+    #table(
+      columns: (6),
+      [*IP-Addresses*], [*Hostnames*], [*Ports*], [*Services*], [*Banners*], [*OS*],
+      [188.68.47.54], [a2f36.netcup.net \ softscheck.com], [21/tcp \ 22/tcp \ 53/tcp \ 80/tcp \ 443/tcp \ 8443/tcp], [ftp \ ssh \ domain \ http \ http \ https-alt], [ProFTPD \ OpenSSH/8.4p1 Debian 5+deb11u4 \  \ nginx \ nginx \ sw-cp-server], [linux]
+    )
+    ```
+  </Tab>
+
+  <Tab title="Tool output">
+    ### nmap
+
+    Generates a shell script that re-runs Nmap against the discovered hosts and ports. Useful for targeted follow-up scans.
+
+    ```bash
+    scans2any --nmap scan.xml -w nmap -o rescan.sh
+    ```
+
+    ```bash
+    # Custom TCP scan options
+    scans2any --nmap scan.xml -w nmap --options-tcp "-sT -sV -O" -o custom_scan.sh
+    ```
+
+    Example output:
+
+    ```bash
+    #!/bin/bash
+    nmap 188.68.47.54 -sS -A -Pn -n -T4 -oA 188.68.47.54 -p 21,22,53,80,443,8443,8444
+    ```
+
+    <Note>
+      The generated Nmap command may include one extra port beyond what was discovered. This is intentional — scanning a closed port helps Nmap with OS detection.
+    </Note>
+
+    ---
+
+    ### aquatone
+
+    Generates a list of HTTP and HTTPS URLs suitable for feeding into [Aquatone](https://github.com/shelld3v/aquatone) for web screenshotting.
+
+    ```bash
+    scans2any --nmap scan.xml -w aquatone
+    ```
+
+    Each host and port produces two URLs:
+
+    ```text
+    http://host:port
+    https://host:port
+    ```
+
+    ---
+
+    ### host
+
+    Outputs a plain list of IP addresses and hostnames, one per line. Useful for creating target lists for other tools.
+
+    ```bash
+    scans2any --nmap scan.xml -w host -o targets.txt
+    ```
+
+    Example output:
+
+    ```text
+    188.68.47.54
+    a2f36.netcup.net
+    softscheck.com
+    ```
+
+    ---
+
+    ### url
+
+    Generates URLs using detected service names as protocols.
+
+    ```bash
+    scans2any --nmap scan.xml -w url -o urls.txt
+    ```
+
+    Example output:
+
+    ```text
+    http://example.com:80
+    ssh://192.168.1.1:22
+    ```
+
+    ---
+
+    ### database
+
+    Saves the infrastructure into a project database. See the `-p` / `--project` flag for project-based workflows.
+
+    ```bash
+    scans2any --nmap scan.xml -w database -p myproject
+    ```
+  </Tab>
+</Tabs>
+
+## Common output options
+
+### Selecting columns with `-c` / `--columns`
+
+All writers support restricting which columns appear in the output. Pass a comma-separated list of column names:
+
+```bash
+scans2any --nmap scan.xml -c "IP-Addresses,Ports,Services"
+```
+
+Available columns: `IP-Addresses`, `Hostnames`, `Ports`, `Services`, `Banners`, `OS`.
+
+### One table per host with `--multi-table`
+
+By default, scans2any produces a single table for all hosts. Use `--multi-table` to split the output into one table per host. This is especially useful with HTML, Markdown, and terminal output on large scans.
+
+```bash
+scans2any --nmap scan.xml --multi-table
+```
+
+### Saving output to a file with `-o`
+
+```bash
+scans2any --nmap scan.xml -w json -o result.json
+```

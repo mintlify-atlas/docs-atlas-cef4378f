@@ -1,0 +1,217 @@
+---
+title: "scans2any CLI options reference"
+description: "Complete reference for every scans2any command-line flag and argument, organized by section, with types, default values, and usage examples."
+---
+
+scans2any exposes a single command with flags organized into six sections: general options, input files, output writer, verbosity, filtering, and writer arguments. Every flag documented here corresponds directly to the output of `scans2any --help`.
+
+```text
+usage: scans2any [-h] [--version] [-p name] [--merge-file filename]
+                 [--buffer-file buffer] [-o filename] [--ignore-conflicts]
+                 [--no-auto-merge]
+                 [-a filename/directory [filename/directory ...]]
+                 [--aquatone filename/directory [filename/directory ...]]
+                 [--bloodhound filename/directory [filename/directory ...]]
+                 [--json filename/directory [filename/directory ...]]
+                 [--masscan filename/directory [filename/directory ...]]
+                 [--nessus filename/directory [filename/directory ...]]
+                 [--nmap filename/directory [filename/directory ...]]
+                 [--nxc filename/directory [filename/directory ...]]
+                 [--txt filename/directory [filename/directory ...]]
+                 [-w {aquatone,csv,database,excel,host,html,json,latex,markdown,nmap,terminal,typst,url,xml,yaml}]
+                 [--multi-table] [-c COLUMNS] [-W] [-v | -q]
+                 [--filters FILTERS [FILTERS ...]]
+                 [-F ENABLE_FILTERS [ENABLE_FILTERS ...]]
+                 [--disable-filters DISABLE_FILTERS [DISABLE_FILTERS ...]]
+                 [-C col:regex [col:regex ...]] [-Cv [col:regex ...]]
+                 [-Ch [col:regex ...]] [--hosts-file filename] [-L]
+                 [--table-fmt TABLE_FMT]
+```
+
+<Tabs>
+  <Tab title="General options">
+    <ParamField path="-h, --help" type="flag">
+      Show the help message and exit.
+    </ParamField>
+
+    <ParamField path="--version" type="flag">
+      Display the installed version of scans2any and exit.
+    </ParamField>
+
+    <ParamField path="-p, --project" type="string">
+      Load from and save into a SQLite database named `<name>.db`. When this flag is set and scan input files are also provided, scans2any automatically persists the combined infrastructure to the database after parsing.
+    </ParamField>
+
+    <ParamField path="--merge-file" type="filename">
+      Path to a merge file that provides rules for resolving conflicts between scans. Use this to supply previously saved conflict resolutions or custom auto-merge rules.
+    </ParamField>
+
+    <ParamField path="--buffer-file" type="filename" default="BUFFER_FILE.json">
+      File path where scans2any writes the intermediate JSON result when it cannot resolve all conflicts automatically. Inspect or edit this file, then re-run with `--merge-file` to continue.
+    </ParamField>
+
+    <ParamField path="-o, --out" type="filename">
+      Write output to the specified file instead of printing to stdout.
+    </ParamField>
+
+    <ParamField path="--ignore-conflicts" type="flag">
+      Skip conflict detection entirely. No merge file is created; scans2any produces output even when collisions remain unresolved. Some writers (such as `database`) set this automatically.
+    </ParamField>
+
+    <ParamField path="--no-auto-merge" type="flag">
+      Disable scans2any's built-in automatic conflict-resolution rules. With this flag, all collisions are written to the buffer file for manual resolution.
+    </ParamField>
+
+    <ParamField path="--merge-rules" type="filename">
+      Path to a YAML file containing custom auto-merge rules to apply before escalating to a merge file. The file must have an `auto-merge` key with a list of rule objects. See [Merge file format](/reference/merge-file-format) for the rule syntax.
+    </ParamField>
+  </Tab>
+
+  <Tab title="Input files">
+    At least one input flag is required. All input flags accept one or more file paths or a directory. When a directory is given, scans2any recurses into it looking for matching files.
+
+    <ParamField path="-a, --auto" type="filename/directory [...]">
+      Auto-detect the file format and dispatch to the appropriate parser. Tries each parser in turn based on file extension, and uses the first one that returns a non-empty result.
+    </ParamField>
+
+    <ParamField path="--aquatone" type="filename/directory [...]">
+      Parse an Aquatone session file (`aquatone_session.json`) or a directory containing one. Extracts hostnames, IP addresses, HTTP/HTTPS service entries, page titles, and server headers.
+    </ParamField>
+
+    <ParamField path="--bloodhound" type="filename/directory [...]">
+      Parse a Bloodhound computers JSON export. Extracts hostnames and OS information only — no ports, services, or IP addresses are present in this format.
+    </ParamField>
+
+    <ParamField path="--json" type="filename/directory [...]">
+      Parse a scans2any JSON export (the output of `-w json`). This is the only round-trippable format: you can export to JSON, then re-import it for further filtering or reformatting without re-parsing the original scan files.
+    </ParamField>
+
+    <ParamField path="--masscan" type="filename/directory [...]">
+      Parse Masscan JSON port scan output (generated with `masscan -oJ`). Extracts IP addresses and open ports; no service names or banners are included in Masscan output.
+    </ParamField>
+
+    <ParamField path="--nessus" type="filename/directory [...]">
+      Parse a Nessus `.nessus` report file. Extracts IP addresses, hostnames, OS, services, banners (HTTP and SSH), and vulnerability types (severity ≥ 2) into a `Vulnerability-Type` column.
+    </ParamField>
+
+    <ParamField path="--nmap" type="filename/directory [...]">
+      Parse Nmap XML output (generated with `-oX` or `-oA`). Extracts IP addresses, hostnames (including those found in TLS certificates and script results), OS fingerprints, services, and banners. Supports incomplete/aborted scan files.
+    </ParamField>
+
+    <ParamField path="--nxc" type="filename/directory [...]">
+      Parse a NetExec (formerly CrackMapExec) SQLite database (`SMB.db`). Extracts IP addresses, hostnames, OS, and SMB service details including signing status and SMBv1 support.
+    </ParamField>
+
+    <ParamField path="--txt" type="filename/directory [...]">
+      Parse a plain text file mapping IP addresses to hostnames. Accepts `/etc/hosts`-style lines (`IP hostname1 hostname2 ...`) and reverse-order lines (`hostname IP`).
+    </ParamField>
+  </Tab>
+
+  <Tab title="Output writer">
+    <ParamField path="-w, --writer" type="string" default="terminal">
+      Select the output writer. Available values:
+
+      `aquatone` `csv` `database` `excel` `host` `html` `json` `latex` `markdown` `nmap` `terminal` `typst` `url` `xml` `yaml`
+
+      See [Writers reference](/reference/writers) for details on each format.
+    </ParamField>
+
+    <ParamField path="--multi-table" type="flag">
+      Split output into one table per host, where supported by the writer. Host metadata (IP, hostnames, OS) appears in the table header; services, ports, and banners appear in the body.
+    </ParamField>
+
+    <ParamField path="-c, --columns" type="string" default="IP-Addresses,Hostnames,Ports,Services,Banners,OS">
+      Comma-separated list of columns to include in the output. Standard columns are `IP-Addresses`, `Hostnames`, `Ports`, `Services`, `Banners`, and `OS`. Parser-specific columns such as `Vulnerability-Type` (Nessus) and `http_status` (Aquatone) can also be requested here.
+    </ParamField>
+
+    <ParamField path="-W, --list-writers" type="flag">
+      Print all available writers with their descriptions and writer-specific options, then exit.
+    </ParamField>
+  </Tab>
+
+  <Tab title="Verbosity">
+    The `-v` and `-q` flags are mutually exclusive.
+
+    <ParamField path="-v, --verbose" type="flag">
+      Increase verbosity. Use once for informational output; use twice (`-vv`) for full debug output with timestamps.
+    </ParamField>
+
+    <ParamField path="-q, --quiet" type="flag">
+      Suppress all output except errors. Useful when piping output to other tools.
+    </ParamField>
+  </Tab>
+
+  <Tab title="Filtering">
+    <ParamField path="--filters" type="string [...]">
+      Overwrite the default filter chain with the specified filters. The default chain is:
+
+      `trash_banner` `trash_service_name` `trash_hostname` `combine_banner` `nmap_banner`
+    </ParamField>
+
+    <ParamField path="-F, --enable-filters" type="string [...]">
+      Enable additional filters on top of the current chain (applied after `--filters`). Use this to add optional filters such as `empty_host` or `ip_port` without replacing defaults.
+    </ParamField>
+
+    <ParamField path="--disable-filters" type="string [...]">
+      Disable specific filters from the current chain (applied after `--enable-filters`). Use this to remove a default filter you don't want.
+    </ParamField>
+
+    <ParamField path="-C, --col" type="col:regex [...]">
+      Shorthand for enabling `column_filter`. Filter hosts and services by regex matched against a named column. Multiple specs are ANDed together.
+
+      Syntax:
+      - `col:regex` — keep if column matches
+      - `col:!regex` — keep if column does **not** match (negation)
+      - `regex` — keep if **any** column matches
+      - `(?i)` prefix — case-insensitive match
+
+      Example: `-C Services:(?i)http Banners:!N/A`
+    </ParamField>
+
+    <ParamField path="-Cv, --col-value" type="col:regex [...]">
+      Like `-C` but activates value-level mode: every service must independently satisfy each global pattern on its own fields. Multi-value fields (`Banners`, `Services`, etc.) are trimmed to only the matching entries.
+    </ParamField>
+
+    <ParamField path="-Ch, --col-host" type="col:regex [...]">
+      Like `-C` but activates host-level mode: if the host or any of its services satisfies the patterns, the entire host is kept with all its services intact.
+    </ParamField>
+
+    <ParamField path="--hosts-file" type="filename">
+      Filter output to only hosts whose IP address or hostname appears in the specified file (one entry per line). Lines starting with `#` and blank lines are ignored. Activates the `hosts_file_filter` filter.
+    </ParamField>
+
+    <ParamField path="-L, --list-filters" type="flag">
+      Print all available filters with their descriptions and options, then exit.
+    </ParamField>
+  </Tab>
+
+  <Tab title="Writer arguments">
+    <ParamField path="--table-fmt" type="string" default="fancy_grid">
+      Table format for the `terminal` writer. Accepts any format name from the [tabulate](https://pypi.org/project/tabulate/) package, including `plain`, `simple`, `github`, `grid`, `fancy_grid`, `pipe`, `orgtbl`, `jira`, `presto`, `pretty`, and `html`.
+    </ParamField>
+  </Tab>
+</Tabs>
+
+## Full usage example
+
+```bash
+scans2any --nmap tcp_scan.xml --nmap udp_scan.xml --nessus scan.nessus
+```
+
+This command combines two Nmap scan files with a Nessus report, applies the default filter chain, and outputs a terminal table.
+
+```bash
+scans2any -a /path/to/scans -w json -o combined.json
+```
+
+Parse all scan files in a directory using auto-detection, then export the combined result to a JSON file for later reuse.
+
+```bash
+scans2any --json combined.json -c IP-Addresses,Services -C Services:https
+```
+
+Re-import the JSON export, select only two columns, and filter to services matching `https`.
+
+<Tip>
+  Use `-W` to list all writers with their options, and `-L` to list all filters — both are useful when exploring capabilities without reading the full reference.
+</Tip>

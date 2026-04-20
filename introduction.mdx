@@ -1,0 +1,79 @@
+---
+title: "What is scans2any?"
+description: "scans2any converts infrastructure scans from Nmap, Nessus, Masscan, and more into 14+ output formats for reporting and tool chaining."
+---
+
+scans2any is a command-line tool that reads infrastructure scan files — from Nmap, Nessus, Masscan, Aquatone, Bloodhound, NetExec, and plain text — and converts them into whatever format you need. Whether you are writing a pentest report, feeding results into another tool, or archiving scan data, scans2any handles the parsing, deduplication, and output in a single command.
+
+<CardGroup cols={2}>
+  <Card title="Install scans2any" icon="download" href="/installation">
+    Install via uv, pipx, or Docker.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Convert your first scan in minutes.
+  </Card>
+  <Card title="Input formats" icon="file-import" href="/usage/input-formats">
+    Supported parsers and their options.
+  </Card>
+  <Card title="Output formats" icon="file-export" href="/usage/output-formats">
+    All 15 writers with format-specific options.
+  </Card>
+</CardGroup>
+
+## Supported input formats
+
+scans2any accepts files and directories from eight scanner types:
+
+| Flag            | Format                                                              |
+| --------------- | ------------------------------------------------------------------- |
+| `--nmap`        | Nmap XML scan files (`*.xml`)                                       |
+| `--nessus`      | Nessus vulnerability reports (`*.nessus`)                           |
+| `--masscan`     | Masscan JSON port scan files                                        |
+| `--aquatone`    | Aquatone session files (`aquatone_session.json`)                    |
+| `--bloodhound`  | Bloodhound computer JSON files                                      |
+| `--nxc`         | NetExec / CrackMapExec SMB database files (`smb.db`)                |
+| `--txt`         | Plain text files for additional IP-to-hostname mappings             |
+| `--json`        | scans2any JSON infrastructure files                                 |
+| `--auto` / `-a` | Auto-detect all supported scan types in a directory                 |
+
+## Supported output formats
+
+Select an output format with `-w` or `--writer`. The default is `terminal`.
+
+| Writer     | Description                                                         |
+| ---------- | ------------------------------------------------------------------- |
+| `terminal` | Pretty-printed table in the terminal (default)                      |
+| `markdown` | Markdown tables                                                     |
+| `html`     | HTML page with styled tables                                        |
+| `csv`      | Flat CSV representation                                             |
+| `json`     | JSON infrastructure object                                          |
+| `yaml`     | YAML infrastructure object                                          |
+| `xml`      | XML representation                                                  |
+| `latex`    | LaTeX `longtable` document                                          |
+| `typst`    | Typst table                                                         |
+| `excel`    | Excel spreadsheet                                                   |
+| `nmap`     | Nmap re-scan shell scripts for discovered ports                     |
+| `aquatone` | List of potential HTTP/HTTPS URLs with ports                        |
+| `host`     | Flat list of IPs and hostnames                                      |
+| `url`      | List of potential URLs for the infrastructure                       |
+| `database` | SQLite project database                                             |
+
+## How it works
+
+scans2any processes every run in three phases.
+
+<Steps>
+  <Step title="Parse and combine">
+    Each input file is parsed by its dedicated parser. The resulting infrastructure objects are combined using Union-Find clustering: any two hosts that share an IP address or hostname are merged into a single entry, even across different scan sources.
+  </Step>
+  <Step title="Merge and filter">
+    Conflicting data — such as two different service names reported for the same port — is resolved by built-in auto-merge rules. You can extend or override these rules with a merge file. Filters then clean and normalize the data, removing noise from banners and hostnames.
+  </Step>
+  <Step title="Check and output">
+    If any conflicts remain unresolved, scans2any writes a `MERGE_FILE.yaml` for manual resolution and pauses. Once all conflicts are clear, it renders the infrastructure in your chosen output format and writes to stdout or a file.
+  </Step>
+</Steps>
+
+<Note>
+  scans2any is released under the **AGPL-3.0-or-later** license. See the [LICENSE](https://github.com/softScheck/scans2any/blob/main/LICENSE) file for details.
+</Note>

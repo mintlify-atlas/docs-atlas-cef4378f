@@ -1,0 +1,214 @@
+---
+title: "scans2any JSON format: infrastructure file reference"
+description: "Reference for the JSON format produced and consumed by scans2any: field definitions, the unknown_N key, custom fields, and round-trip caching workflows."
+---
+
+The scans2any JSON format is the only output format that can be fed back into scans2any as input. Use it to cache the result of an expensive multi-scan combination and then query it repeatedly with different filters, columns, or output formats — without re-parsing the original scan files.
+
+## Structure overview
+
+The JSON output is a single object keyed by IP address. Each value describes one host: its hostnames, OS guesses, and open ports broken into TCP and UDP maps.
+
+```json
+{
+  "192.168.1.1": {
+    "hostnames": ["sshserver"],
+    "tcp_ports": {
+      "22": {
+        "service_names": ["ssh"],
+        "banners": ["Dropbear sshd"]
+      }
+    },
+    "udp_ports": {},
+    "os": ["linux"]
+  },
+  "unknown_0": {
+    "hostnames": [],
+    "tcp_ports": {
+      "22": {
+        "service_names": ["ssh"],
+        "banners": ["Dropbear sshd"]
+      }
+    },
+    "udp_ports": {},
+    "os": ["linux"]
+  }
+}
+```
+
+The `unknown_0` entry shows a host that was present in the original scan but had no IP address — for example, a host record that only contained a hostname or appeared in a scan with no address resolution. scans2any uses `unknown_N` keys (with an incrementing counter) rather than dropping these hosts.
+
+## Field reference
+
+<ResponseField name="{ip-address}" type="object" required>
+  Top-level key identifying the host. Either a valid IPv4 or IPv6 address string, or `unknown_N` for hosts without a resolved IP address.
+
+  <Expandable title="Host fields">
+    <ResponseField name="hostnames" type="array of strings" required>
+      DNS names or NetBIOS names associated with this host. May be empty (`[]`). Populated from scan data; multiple hostnames are preserved as separate entries.
+    </ResponseField>
+
+    <ResponseField name="tcp_ports" type="object" required>
+      Map of open TCP ports. Keys are port numbers as strings (e.g., `"22"`, `"443"`).
+
+      <Expandable title="Port entry fields">
+        <ResponseField name="service_names" type="array of strings" required>
+          Detected service identifiers for this port. Examples: `["ssh"]`, `["http"]`, `["https"]`. After conflict resolution, each port has exactly one service name.
+        </ResponseField>
+
+        <ResponseField name="banners" type="array of strings" required>
+          Banner strings collected for this port. May include software versions, product names, or other text extracted from the scan. Examples: `["OpenSSH 8.2p1"]`, `["Apache httpd 2.4.41"]`. May be empty (`[]`).
+        </ResponseField>
+
+        <ResponseField name="{custom_field}" type="array of strings">
+          Parser-specific fields beyond `service_names` and `banners`. Any key not in the standard set is treated as a custom field and round-trips through JSON. See [Custom fields](#custom-fields) for details.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="udp_ports" type="object" required>
+      Map of open UDP ports. Same structure as `tcp_ports`. Empty (`{}`) when no UDP data is available.
+    </ResponseField>
+
+    <ResponseField name="os" type="array of strings" required>
+      Operating system identifiers detected for this host. Examples: `["linux"]`, `["windows"]`. May be empty (`[]`). After auto-merge, conflicting OS values are resolved to a single entry (or `["unknown"]` when the sources disagree on the OS family).
+    </ResponseField>
+
+    <ResponseField name="ip-addresses" type="array of strings">
+      Additional IP addresses for the same host. Present only when a single host entry in the original scan had more than one address. When reading JSON back, all addresses in this array are merged with the top-level key into the same host.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## The `unknown_N` key
+
+When a host appears in a scan without an IP address, scans2any cannot use its IP as a dictionary key. Instead, it assigns a placeholder key using the pattern `unknown_N`, where `N` is a zero-based counter.
+
+When this JSON is read back by the `--json` parser, any key matching `^unknown_.*` is treated as a no-IP host: the key is not added to the host's address set, but all other fields (`hostnames`, `tcp_ports`, `udp_ports`, `os`) are parsed normally.
+
+```json
+{
+  "unknown_0": {
+    "hostnames": [],
+    "tcp_ports": {
+      "22": {
+        "service_names": ["ssh"],
+        "banners": ["Dropbear sshd"]
+      }
+    },
+    "udp_ports": {},
+    "os": ["linux"]
+  }
+}
+```
+
+<Note>
+  If a key is neither a valid IP address nor an `unknown_N` placeholder, the JSON parser will raise an error and discard the entire host. Do not use hostnames or other non-IP strings as top-level keys when creating JSON files for scans2any to read.
+</Note>
+
+## Custom fields
+
+Some parsers add fields beyond the standard schema. The Aquatone parser, for example, records the HTTP response status code in a field called `http_status`. These custom fields are attached to their port entry and pass through the JSON format intact.
+
+```json
+{
+  "192.168.56.10": {
+    "hostnames": [],
+    "tcp_ports": {
+      "5985": {
+        "service_names": ["http"],
+        "banners": ["Microsoft-HTTPAPI/2.0"],
+        "http_status": ["200"]
+      }
+    },
+    "udp_ports": {},
+    "os": []
+  }
+}
+```
+
+When you read this file back with `--json`, any key in a port object that is not `service_names` or `banners` is loaded as a custom field. You can then include it in output using `-c`:
+
+```bash
+scans2any --json combined.json -c "IP-Addresses,Ports,Services,http_status"
+```
+
+Custom fields are also supported at the host level. Any top-level host key other than `ip-addresses`, `hostnames`, `os`, `tcp_ports`, `udp_ports`, `tcp_status`, or `udp_status` is loaded as a host-level custom field.
+
+## Generating JSON output
+
+Use the `json` writer with `-w json`. Pass `-o` to write to a file:
+
+```bash
+scans2any --nmap scan.xml -w json -o infrastructure.json
+```
+
+```bash
+# Combine multiple scan types and cache as JSON
+scans2any -a /path/to/all/scans -w json -o combined_infra.json
+```
+
+## Reading JSON as input
+
+Use the `--json` flag to pass JSON files as input. You can supply multiple files or a directory:
+
+```bash
+scans2any --json infrastructure.json
+```
+
+```bash
+# Combine two JSON infrastructure files
+scans2any --json combined_infra.json extra_hosts.json
+```
+
+## Round-trip workflow
+
+The JSON format is designed for round-tripping: combine many slow scans once, save the result, then run fast re-queries on the cached file.
+
+```bash
+# Step 1 — combine all scans in a directory (may be slow)
+scans2any -a /path/to/all/scans -w json -o combined_infra.json
+
+# Step 2 — query the cached result with column filtering
+scans2any --json combined_infra.json -c "IP-Addresses,Services" -C "Services:https"
+
+# Step 3 — render in a different format with no re-parsing
+scans2any --json combined_infra.json -w markdown -o report.md
+```
+
+<Tip>
+  The JSON file produced by step 1 already includes deduplication and auto-merge. Any filter or column option applied in later steps operates on the pre-merged data — you do not need to re-run conflict resolution.
+</Tip>
+
+## Minimal valid example
+
+The only required fields are the top-level IP key and at least one of the host-level objects. All arrays may be empty:
+
+```json
+{
+  "1.1.1.1": {
+    "hostnames": ["example.com"],
+    "tcp_ports": {
+      "22": {
+        "service_names": ["ssh"],
+        "banners": ["OpenSSH 8.2p1"]
+      },
+      "80": {
+        "service_names": ["http"],
+        "banners": ["Apache httpd 2.4.41"]
+      }
+    },
+    "udp_ports": {},
+    "os": []
+  }
+}
+```
+
+<CardGroup cols={2}>
+  <Card title="Merge file format" icon="file-code" href="/reference/merge-file-format">
+    Resolve conflicts when combining scans with conflicting data.
+  </Card>
+  <Card title="Output formats" icon="file-export" href="/usage/output-formats">
+    All 15 writers and their options.
+  </Card>
+</CardGroup>

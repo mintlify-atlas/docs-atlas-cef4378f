@@ -1,97 +1,71 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "scans2any: Convert Infrastructure Scans to Any Format"
+description: "scans2any transforms Nmap, Nessus, Masscan, Bloodhound, and more into Markdown, CSV, HTML, YAML, JSON, and 14+ other formats. Merges scans automatically."
 ---
 
-## Setting up
+scans2any is a command-line tool that aggregates infrastructure scan results from multiple sources — Nmap, Nessus, Masscan, Aquatone, Bloodhound, and NetExec — and converts them into whatever output format you need for reporting, further analysis, or tool chaining. It handles conflicting scan data intelligently, letting you resolve collisions automatically or manually.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install scans2any via uv, pipx, or Docker in under a minute.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Convert your first infrastructure scan in three commands.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Input formats" icon="file-import" href="/usage/input-formats">
+    Nmap, Nessus, Masscan, Aquatone, Bloodhound, NetExec, and more.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Output formats" icon="file-export" href="/usage/output-formats">
+    Markdown, CSV, HTML, JSON, YAML, LaTeX, Typst, Excel, and more.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## How it works
 
-Everything you need to create world-class documentation.
+scans2any processes scans in three phases: parse and combine, merge and filter, then check and output.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Steps>
+  <Step title="Parse and combine">
+    Feed any combination of scan files — Nmap XML, Nessus `.nessus`, Masscan JSON, and more. scans2any parses each file and combines them into a single unified infrastructure using Union-Find clustering to identify the same host across multiple scans.
+  </Step>
+  <Step title="Merge and filter">
+    Conflicts — like two scans reporting different service names for the same port — are resolved automatically using built-in rules. Apply filters to normalize banners, remove noise, and focus on relevant hosts and services.
+  </Step>
+  <Step title="Output in any format">
+    Export to terminal tables, Markdown, HTML, CSV, JSON, YAML, XML, LaTeX, Typst, Excel, or generate Nmap re-scan scripts and Aquatone URL lists. Choose a single output or chain formats together.
+  </Step>
+</Steps>
 
-## Need inspiration?
+## Key capabilities
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Filters" icon="filter" href="/usage/filters">
+    Clean and normalize scan data with a composable filter pipeline.
+  </Card>
+  <Card title="Column filtering" icon="magnifying-glass" href="/usage/column-filtering">
+    Filter hosts and services by regex across any column.
+  </Card>
+  <Card title="Merging scans" icon="code-merge" href="/usage/merging-scans">
+    Resolve conflicts between overlapping scans automatically or manually.
+  </Card>
+  <Card title="Project database" icon="database" href="/advanced/project-database">
+    Persist scan data in SQLite for fast re-querying across sessions.
+  </Card>
+</CardGroup>
+
+## CLI reference
+
+<CardGroup cols={2}>
+  <Card title="CLI options" icon="terminal" href="/reference/cli-options">
+    Every flag and argument, with defaults and examples.
+  </Card>
+  <Card title="Parsers" icon="file-code" href="/reference/parsers">
+    Supported input formats and their parser-specific options.
+  </Card>
+  <Card title="Writers" icon="pen-to-square" href="/reference/writers">
+    All output writers with format-specific options.
+  </Card>
+  <Card title="Filters reference" icon="list-check" href="/reference/filters-reference">
+    All built-in filters with priority values and options.
+  </Card>
+</CardGroup>

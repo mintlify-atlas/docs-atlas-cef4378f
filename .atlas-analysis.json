@@ -1,0 +1,105 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "scans2any",
+  "projectDescription": "A CLI tool that converts infrastructure scans from tools like Nmap, Nessus, and Bloodhound into various output formats including Markdown, HTML, CSV, YAML, and more.",
+  "theme": "aspen",
+  "primaryColor": "#3b6a8a",
+  "lightColor": "#7b7e83",
+  "darkColor": "#e1e8e9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Using scans2any",
+            "pages": [
+              "usage/input-formats",
+              "usage/output-formats",
+              "usage/filters",
+              "usage/merging-scans",
+              "usage/column-filtering"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/project-database",
+              "advanced/docker",
+              "advanced/custom-filters"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "contributing/contributing",
+              "contributing/internals"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "reference/cli-options",
+              "reference/parsers",
+              "reference/writers",
+              "reference/filters-reference"
+            ]
+          },
+          {
+            "group": "Data Formats",
+            "pages": [
+              "reference/json-format",
+              "reference/merge-file-format"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Parse infrastructure scans from Nmap, Nessus, Masscan, Aquatone, Bloodhound, NetExec, and more",
+    "Export to 14+ output formats: Markdown, HTML, CSV, JSON, YAML, XML, LaTeX, Typst, Excel, and more",
+    "Intelligent conflict resolution with automatic and manual merge-file workflows",
+    "Powerful column-based regex filtering with host, value, and normal modes",
+    "Generate Nmap re-scan scripts and Aquatone URL lists from scan results",
+    "Auto-detect and batch-import scan files from directories",
+    "Persistent project database using SQLite for reuse across sessions",
+    "Customizable filter pipeline for data normalization and cleanup",
+    "Docker support for zero-setup usage"
+  ],
+  "publicApiSurface": [
+    "scans2any --nmap <file>",
+    "scans2any --nessus <file>",
+    "scans2any --aquatone <file>",
+    "scans2any --bloodhound <file>",
+    "scans2any --masscan <file>",
+    "scans2any --nxc <file>",
+    "scans2any --json <file>",
+    "scans2any --txt <file>",
+    "scans2any --auto <directory>",
+    "scans2any -w {aquatone,csv,database,excel,host,html,json,latex,markdown,nmap,terminal,typst,url,xml,yaml}",
+    "scans2any --filters <filter-names>",
+    "scans2any --enable-filters <filter-names>",
+    "scans2any --disable-filters <filter-names>",
+    "scans2any -C col:regex",
+    "scans2any -Cv col:regex",
+    "scans2any -Ch col:regex",
+    "scans2any --merge-file <file>",
+    "scans2any -p <project-name>",
+    "scans2any --multi-table",
+    "scans2any -c <columns>"
+  ]
+}

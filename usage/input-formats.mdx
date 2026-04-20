@@ -1,0 +1,152 @@
+---
+title: "Supported scan input formats and parsers in scans2any"
+description: "Parse Nmap XML, Nessus reports, Masscan JSON, Aquatone sessions, Bloodhound exports, NetExec databases, and plain text files into one infrastructure model."
+---
+
+scans2any reads infrastructure data from eight distinct scan formats. Each parser accepts either a single file or a directory of files, and you can mix multiple parsers in a single invocation to combine data from different tools.
+
+Use the `-a` / `--auto` flag when you have a directory of mixed scan files and want scans2any to detect the right parser automatically. For full control, pass each input explicitly with its corresponding flag.
+
+## Parsers
+
+<AccordionGroup>
+  <Accordion title="--nmap — XML Nmap scan files">
+    Parses Nmap XML output files (produced with `-oX` or `-oA`). This is the most common input format and supports both TCP and UDP port data, service detection, OS detection, and banner information.
+
+    ```bash
+    scans2any --nmap tcp_scan.xml
+    ```
+
+    ```bash
+    # Multiple files
+    scans2any --nmap tcp_scan.xml udp_scan.xml
+    ```
+
+    ```bash
+    # Entire directory of Nmap XML files
+    scans2any --nmap scans/
+    ```
+  </Accordion>
+
+  <Accordion title="--nessus — Nessus report files">
+    Parses Nessus `.nessus` report files exported from Tenable Nessus. Extracts host information, open ports, detected services, and vulnerability banners.
+
+    ```bash
+    scans2any --nessus vulnerabilities.nessus
+    ```
+
+    ```bash
+    # Combine with an Nmap scan
+    scans2any --nmap tcp_scan.xml --nessus vulnerabilities.nessus
+    ```
+  </Accordion>
+
+  <Accordion title="--masscan — Masscan JSON port scan files">
+    Parses Masscan JSON output files (produced with `-oJ`). Masscan scans are typically fast and port-only; combining them with Nmap scans gives both speed and service detail.
+
+    ```bash
+    scans2any --masscan masscan_out.json
+    ```
+
+    ```bash
+    scans2any --masscan results/
+    ```
+  </Accordion>
+
+  <Accordion title="--aquatone — Aquatone session file">
+    Parses an Aquatone session file (`aquatone_session.json`). Aquatone is a web screenshot tool; its session file records discovered HTTP/HTTPS endpoints and their metadata.
+
+    ```bash
+    scans2any --aquatone aquatone_session.json
+    ```
+
+    ```bash
+    scans2any --aquatone aquatone_output/
+    ```
+  </Accordion>
+
+  <Accordion title="--bloodhound — Bloodhound computer JSON file">
+    Parses Bloodhound computer JSON files, which are produced during Active Directory reconnaissance. This lets you bring AD host data into your unified infrastructure model.
+
+    ```bash
+    scans2any --bloodhound computers.json
+    ```
+
+    ```bash
+    scans2any --bloodhound bloodhound_data/
+    ```
+  </Accordion>
+
+  <Accordion title="--nxc — NetExec / CrackMapExec database">
+    Parses the `smb.db` SQLite database created by NetExec (formerly CrackMapExec). This is useful for incorporating SMB enumeration results into the same output as port scans.
+
+    ```bash
+    scans2any --nxc smb.db
+    ```
+
+    ```bash
+    scans2any --nxc nxc_workspaces/
+    ```
+  </Accordion>
+
+  <Accordion title="--json — scans2any JSON files">
+    Reads JSON files previously written by scans2any's own `json` writer. Because the JSON writer produces the same structured format that the parser reads, you can cache a combined result and reuse it without re-parsing all original scan files.
+
+    ```bash
+    scans2any --json combined_infra.json
+    ```
+
+    ```bash
+    # Cache a slow multi-scan combination, then reuse it
+    scans2any -a /path/to/all/scans -w json -o combined_infra.json
+    scans2any --json combined_infra.json -c IP-Addresses,Services -C Services:https
+    ```
+
+    <Note>
+      The `--json` parser is the only one that can also serve as an output format. See [Output formats](/usage/output-formats) for details.
+    </Note>
+  </Accordion>
+
+  <Accordion title="--txt — plain text IP-to-hostname mapping files">
+    Parses plain text files that map IP addresses to hostnames. Useful for supplementing scan data with host lists from other sources.
+
+    ```bash
+    scans2any --txt hostnames.txt
+    ```
+
+    ```bash
+    # Supplement an Nmap scan with additional hostname mappings
+    scans2any --nmap scan.xml --txt extra_hosts.txt
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Auto-detect with `-a` / `--auto`
+
+When your scan files are in a directory and you don't want to specify each parser manually, use `--auto`. scans2any will inspect the files and apply the appropriate parser to each one.
+
+```bash
+scans2any --auto tests/data
+```
+
+```bash
+scans2any -a /path/to/scans
+```
+
+<Tip>
+  Run `scans2any -L` to list all available filters, and `scans2any -W` to list all available writers with their options.
+</Tip>
+
+## Combining multiple inputs
+
+You can pass multiple files to the same parser flag and mix different parsers in one call. scans2any merges all inputs into a single infrastructure model before writing output.
+
+```bash
+scans2any --nmap tcp_scan.xml udp_scan.xml --nessus report.nessus
+```
+
+```bash
+scans2any --nmap scan.xml --nxc smb.db --bloodhound computers.json
+```
+
+When combining scans, conflicts between sources (such as two different service names for the same port) are detected automatically. See [Merging scans](/usage/merging-scans) for how to resolve them.

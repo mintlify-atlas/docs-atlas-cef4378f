@@ -1,0 +1,564 @@
+---
+title: "Output writers: all supported formats"
+description: "Every scans2any output writer, the format each produces, writer-specific options, and example commands with sample output snippets."
+---
+
+scans2any ships fifteen output writers, selectable with the `-w` flag. The default writer is `terminal`. All writers support the `-c / --columns` flag to control which columns appear in the output, and most support `--multi-table` to produce one table per host.
+
+Run `scans2any -W` (or `--list-writers`) to see all writers with their descriptions and options at any time.
+
+## Common options
+
+These flags apply to all writers:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-w, --writer` | `terminal` | Select the output writer |
+| `-c, --columns` | `IP-Addresses,Hostnames,Ports,Services,Banners,OS` | Comma-separated list of columns to include |
+| `--multi-table` | off | Split output into one table per host |
+| `-o, --out` | stdout | Write output to a file |
+
+## Writers
+
+<AccordionGroup>
+  <Accordion title="terminal — default output">
+    **Writer name:** `terminal`
+
+    Renders a formatted table in the console using the `tabulate` Python package. This is the default writer when `-w` is not specified.
+
+    **Writer-specific options:**
+
+    | Option | Default | Description |
+    |--------|---------|-------------|
+    | `--table-fmt` | `fancy_grid` | Table format from the tabulate package |
+
+    Available table formats include: `plain`, `simple`, `github`, `grid`, `fancy_grid`, `pipe`, `orgtbl`, `jira`, `presto`, `pretty`, `html`, and more. See the [tabulate documentation](https://pypi.org/project/tabulate/) for a full list.
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml
+    ```
+
+    ```bash
+    scans2any --nmap scan.xml --table-fmt github
+    ```
+
+    **Sample output (`fancy_grid`):**
+
+    ```text
+    ╒════════════════╤══════════════════╤══════════╤════════════╤════════════════════════════════╤═══════╕
+    │ IP-Addresses   │ Hostnames        │ Ports    │ Services   │ Banners                        │ OS    │
+    ╞════════════════╪══════════════════╪══════════╪════════════╪════════════════════════════════╪═══════╡
+    │ 188.68.47.54   │ a2f36.netcup.net │ 21/tcp   │ ftp        │ ProFTPD                        │ linux │
+    │                │ softscheck.com   │ 22/tcp   │ ssh        │ OpenSSH/8.4p1 Debian 5+deb11u4 │       │
+    │                │                  │ 53/tcp   │ domain     │                                │       │
+    │                │                  │ 80/tcp   │ http       │ nginx                          │       │
+    │                │                  │ 443/tcp  │ http       │ nginx                          │       │
+    │                │                  │ 8443/tcp │ https-alt  │ sw-cp-server                   │       │
+    ╘════════════════╧══════════════════╧══════════╧════════════╧════════════════════════════════╧═══════╛
+    ```
+  </Accordion>
+
+  <Accordion title="markdown — Markdown tables">
+    **Writer name:** `markdown`
+
+    Produces Markdown-formatted tables. Multi-value cells use a configurable merge symbol.
+
+    **Writer-specific options:**
+
+    | Option | Default | Description |
+    |--------|---------|-------------|
+    | `--flattened` | off | One row per service instead of merged cells |
+    | `--merge-symbol` | `<br>` | Symbol used to join multiple values within a cell |
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w markdown -o report.md
+    ```
+
+    ```bash
+    # Flattened: one row per service
+    scans2any --nmap scan.xml -w markdown --flattened -o services.md
+    ```
+
+    ```bash
+    # Custom separator between values in a cell
+    scans2any --nmap scan.xml -w markdown --merge-symbol " | " -o report.md
+    ```
+
+    **Sample output:**
+
+    ```markdown
+    | 188.68.47.54   | a2f36.netcup.net<br>softscheck.com   | linux                          |
+    |:---------------|:-------------------------------------|:-------------------------------|
+    | 21/tcp         | ftp                                  | ProFTPD                        |
+    | 22/tcp         | ssh                                  | OpenSSH/8.4p1 Debian 5+deb11u4 |
+    | 53/tcp         | domain                               |                                |
+    | 80/tcp         | http                                 | nginx                          |
+    | 443/tcp        | http                                 | nginx                          |
+    | 8443/tcp       | https-alt                            | sw-cp-server                   |
+    ```
+  </Accordion>
+
+  <Accordion title="json — JSON output (round-trippable)">
+    **Writer name:** `json`
+
+    Produces a structured JSON representation of the infrastructure. This is the only output format that can also be used as input in a subsequent run, making it ideal for caching slow multi-file parses.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    # Export combined result to JSON for later reuse
+    scans2any -a /path/to/all/scans -w json -o combined.json
+    ```
+
+    ```bash
+    # Re-import and filter without re-parsing the originals
+    scans2any --json combined.json -c IP-Addresses,Services -C Services:https
+    ```
+
+    **Sample output:**
+
+    ```json
+    {
+      "188.68.47.54": {
+        "hostnames": [
+          "a2f36.netcup.net",
+          "softscheck.com"
+        ],
+        "tcp_ports": {
+          "21": {
+            "service_names": ["ftp"],
+            "banners": ["ProFTPD"]
+          },
+          "22": {
+            "service_names": ["ssh"],
+            "banners": ["OpenSSH/8.4p1 Debian 5+deb11u4"]
+          },
+          "80": {
+            "service_names": ["http"],
+            "banners": ["nginx"]
+          },
+          "443": {
+            "service_names": ["http"],
+            "banners": ["nginx"]
+          }
+        },
+        "udp_ports": {},
+        "os": ["linux"]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="yaml — YAML output">
+    **Writer name:** `yaml`
+
+    Produces a YAML representation of the infrastructure with the same structure as the JSON writer.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w yaml -o infrastructure.yml
+    ```
+
+    **Sample output:**
+
+    ```yaml
+    188.68.47.54:
+        hostnames:
+        - a2f36.netcup.net
+        - softscheck.com
+        tcp_ports:
+            21:
+                service_names:
+                - ftp
+                banners:
+                - ProFTPD
+            22:
+                service_names:
+                - ssh
+                banners:
+                - OpenSSH/8.4p1 Debian 5+deb11u4
+            80:
+                service_names:
+                - http
+                banners:
+                - nginx
+        udp_ports: {}
+        os:
+        - linux
+    ```
+  </Accordion>
+
+  <Accordion title="csv — comma-separated values">
+    **Writer name:** `csv`
+
+    Outputs a flattened CSV with one row per service. All standard columns and custom columns (such as `Vulnerability-Type`) can be selected with `-c`.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w csv -o hosts.csv
+    ```
+
+    **Sample output:**
+
+    ```csv
+    IP-Addresses,Hostnames,Ports,Services,Banners,OS
+    188.68.47.54,a2f36.netcup.net - softscheck.com,21/tcp,ftp,ProFTPD,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,22/tcp,ssh,OpenSSH/8.4p1 Debian 5+deb11u4,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,53/tcp,domain,,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,80/tcp,http,nginx,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,443/tcp,http,nginx,linux
+    188.68.47.54,a2f36.netcup.net - softscheck.com,8443/tcp,https-alt,sw-cp-server,linux
+    ```
+  </Accordion>
+
+  <Accordion title="html — HTML document">
+    **Writer name:** `html`
+
+    Produces a complete HTML document with styled, striped, hover-enabled tables. The output can be opened directly in any browser.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w html -o report.html
+    ```
+
+    **Sample output:**
+
+    ```html
+    <!DOCTYPE html>
+    <html>
+      <head>
+          <title>scans2any</title>
+          <style>
+              .table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              .table th, .table td { padding: 8px; text-align: left; border: 1px solid #ddd; }
+              .table-striped tbody tr:nth-of-type(odd) { background-color: #f9f9f9; }
+              .table-hover tbody tr:hover { background-color: #f5f5f5; }
+          </style>
+      </head>
+      <body>
+        <h1>scans2any</h1>
+        <table border="1" class="dataframe table table-striped table-hover">
+          <thead>
+            <tr style="text-align: right;">
+              <th>IP-Addresses</th>
+              <th>Hostnames</th>
+              <th>Ports</th>
+              <th>Services</th>
+              <th>Banners</th>
+              <th>OS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>188.68.47.54</td>
+              <td>a2f36.netcup.net<br>softscheck.com</td>
+              <td>21/tcp<br>22/tcp<br>53/tcp<br>80/tcp<br>443/tcp<br>8443/tcp</td>
+              <td>ftp<br>ssh<br>domain<br>http<br>http<br>https-alt</td>
+              <td>ProFTPD<br>OpenSSH/8.4p1 Debian 5+deb11u4<br><br>nginx<br>nginx<br>sw-cp-server</td>
+              <td>linux</td>
+            </tr>
+          </tbody>
+        </table>
+      </body>
+    </html>
+    ```
+  </Accordion>
+
+  <Accordion title="xml — XML document">
+    **Writer name:** `xml`
+
+    Outputs a structured XML document representing the infrastructure.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w xml -o infrastructure.xml
+    ```
+
+    **Sample output:**
+
+    ```xml
+    <?xml version="1.0" ?>
+    <infrastructure>
+      <host ip="188.68.47.54">
+        <hostnames>
+          <hostname>a2f36.netcup.net</hostname>
+          <hostname>softscheck.com</hostname>
+        </hostnames>
+        <os_info>
+          <os>linux</os>
+        </os_info>
+        <tcp_ports>
+          <port number="21">
+            <services><service>ftp</service></services>
+            <banners><banner>ProFTPD</banner></banners>
+          </port>
+          <port number="22">
+            <services><service>ssh</service></services>
+            <banners><banner>OpenSSH/8.4p1 Debian 5+deb11u4</banner></banners>
+          </port>
+          <port number="80">
+            <services><service>http</service></services>
+            <banners><banner>nginx</banner></banners>
+          </port>
+        </tcp_ports>
+      </host>
+    </infrastructure>
+    ```
+  </Accordion>
+
+  <Accordion title="excel — Excel spreadsheet">
+    **Writer name:** `excel`
+
+    Outputs an Excel `.xlsx` file. When `--multi-table` is used without `--flattened`, each host is placed in its own worksheet.
+
+    **Writer-specific options:**
+
+    | Option | Default | Description |
+    |--------|---------|-------------|
+    | `--flattened` | off | One row per service in a single flat table |
+
+    **Example:**
+
+    ```bash
+    # Standard multi-value-per-cell format
+    scans2any --nmap scan.xml -w excel -o infra.xlsx
+    ```
+
+    ```bash
+    # Flattened: one row per service
+    scans2any --nmap scan.xml -w excel --flattened -o services.xlsx
+    ```
+  </Accordion>
+
+  <Accordion title="latex — LaTeX document">
+    **Writer name:** `latex`
+
+    Generates a complete LaTeX document using `longtable` and `booktabs` for professional typesetting.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w latex -o report.tex
+    ```
+
+    ```bash
+    # Compile the LaTeX document
+    pdflatex report.tex
+    pdflatex report.tex  # run twice for correct table formatting
+    ```
+
+    **Sample output:**
+
+    ```tex
+    \documentclass{article}
+    \usepackage[utf8]{inputenc}
+    \usepackage{longtable}
+    \usepackage{booktabs}
+    \usepackage{geometry}
+    \geometry{a4paper,margin=2pt}
+    \usepackage{makecell}
+    \usepackage{array}
+    \usepackage{multirow}
+    \title{Infrastructure Scan Results}
+    \author{Generated by scans2any}
+    \date{\today}
+
+    \begin{document}
+    \maketitle
+
+    \begin{longtable}{llllll}
+    \caption{Infrastructure Scan Results} \\
+    \toprule
+    \makecell[t]{IP-Addresses} & \makecell[t]{Hostnames} & \makecell[t]{Ports} & \makecell[t]{Services} & \makecell[t]{Banners} & \makecell[t]{OS} \\
+    \midrule
+    \endfirsthead
+    ...
+    \end{longtable}
+    \end{document}
+    ```
+  </Accordion>
+
+  <Accordion title="typst — Typst document">
+    **Writer name:** `typst`
+
+    Produces a [Typst](https://typst.app/) table source file, a modern alternative to LaTeX.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w typst -o report.typ
+    ```
+
+    ```bash
+    typst compile report.typ
+    ```
+
+    **Sample output:**
+
+    ```typst
+    #set page(flipped: true)
+
+    #table(
+      columns: (6),
+      [*IP-Addresses*], [*Hostnames*], [*Ports*], [*Services*], [*Banners*], [*OS*],
+      [188.68.47.54], [a2f36.netcup.net \ softscheck.com], [21/tcp \ 22/tcp \ 53/tcp \ 80/tcp \ 443/tcp \ 8443/tcp], [ftp \ ssh \ domain \ http \ http \ https-alt], [ProFTPD \ OpenSSH/8.4p1 Debian 5+deb11u4 \  \ nginx \ nginx \ sw-cp-server], [linux]
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="nmap — Nmap re-scan script">
+    **Writer name:** `nmap`
+
+    Generates a bash shell script that runs Nmap against each discovered host with the ports found in the scan data. Useful for rescanning targets from a previous Masscan or Nessus run.
+
+    <Note>
+      The generated script adds one extra port beyond those found in the scan. Scanning a closed port helps Nmap with OS detection fingerprinting.
+    </Note>
+
+    **Writer-specific options:**
+
+    | Option | Default | Description |
+    |--------|---------|-------------|
+    | `--options-tcp` | `-sS -A -Pn -n -T4 -oA` | TCP scan options passed to each Nmap command |
+    | `--options-udp` | `-sU -A -Pn -n -T4 -oA` | UDP scan options passed to each Nmap command |
+
+    **Example:**
+
+    ```bash
+    # Generate rescan script with default options
+    scans2any --nmap scan.xml -w nmap -o rescan.sh
+    ```
+
+    ```bash
+    # Custom TCP scan options
+    scans2any --nmap scan.xml -w nmap --options-tcp "-sT -sV -O" -o custom_scan.sh
+    ```
+
+    **Sample output:**
+
+    ```bash
+    #!/bin/bash
+    nmap 188.68.47.54 -sS -A -Pn -n -T4 -oA 188.68.47.54 -p 21,22,53,80,443,8443,8444
+    ```
+  </Accordion>
+
+  <Accordion title="host — host list">
+    **Writer name:** `host`
+
+    Outputs a plain text list of all IP addresses and hostnames, one per line. Useful for generating target files for other tools.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w host -o targets.txt
+    ```
+
+    **Sample output:**
+
+    ```text
+    188.68.47.54
+    a2f36.netcup.net
+    softscheck.com
+    ```
+  </Accordion>
+
+  <Accordion title="url — URL list">
+    **Writer name:** `url`
+
+    Generates a list of potential URLs constructed from service names as protocols, hostnames, and port numbers.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w url -o urls.txt
+    ```
+
+    **Sample output:**
+
+    ```text
+    http://example.com:80
+    ssh://192.168.1.1:22
+    ```
+  </Accordion>
+
+  <Accordion title="aquatone — Aquatone URL list">
+    **Writer name:** `aquatone`
+
+    Generates a list of HTTP and HTTPS URLs suitable for piping into [Aquatone](https://github.com/shelld3v/aquatone) for web screenshot capture. For each host and port, it generates both an HTTP and an HTTPS URL.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w aquatone
+    ```
+
+    **Sample output:**
+
+    ```text
+    http://host:port
+    https://host:port
+    ```
+  </Accordion>
+
+  <Accordion title="database — SQLite persistence">
+    **Writer name:** `database`
+
+    Writes the infrastructure to a SQLite database. Use together with `-p / --project` to name the database file. Conflicts are still checked; use `--ignore-conflicts` explicitly if you want to write even when conflicts remain.
+
+    **No writer-specific options.**
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml -w database -p myproject
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Writer summary
+
+| Writer | Format | File extension | Round-trippable |
+|--------|--------|---------------|----------------|
+| `terminal` | Console table | — | No |
+| `markdown` | Markdown | `.md` | No |
+| `json` | JSON | `.json` | **Yes** |
+| `yaml` | YAML | `.yml` | No |
+| `csv` | CSV | `.csv` | No |
+| `html` | HTML | `.html` | No |
+| `xml` | XML | `.xml` | No |
+| `excel` | Excel | `.xlsx` | No |
+| `latex` | LaTeX | `.tex` | No |
+| `typst` | Typst | `.typ` | No |
+| `nmap` | Bash script | `.sh` | No |
+| `host` | Plain text | `.txt` | No |
+| `url` | Plain text | `.txt` | No |
+| `aquatone` | Plain text | `.txt` | No |
+| `database` | SQLite | `.db` | No |

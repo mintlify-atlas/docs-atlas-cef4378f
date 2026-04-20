@@ -1,0 +1,456 @@
+---
+title: "Built-in filters reference for scans2any"
+description: "All eleven built-in filters with priority values, what they apply to, CLI options, before/after examples, and default activation status."
+---
+
+Filters run as a pipeline between parsing and output. Each filter receives infrastructure data, transforms or removes entries, and passes the result to the next filter. Filters are sorted by their `PRIORITY` value before execution — lower values run first. You control the pipeline with `--filters`, `--enable-filters` (`-F`), and `--disable-filters`.
+
+## Default filter chain
+
+The following filters are active by default:
+
+```text
+trash_banner  trash_service_name  trash_hostname  combine_banner  nmap_banner
+```
+
+Override the entire chain with `--filters`, add to it with `--enable-filters`, or remove individual filters with `--disable-filters`:
+
+```bash
+# Replace defaults with a custom chain
+scans2any --nmap scan.xml --filters trash_banner nmap_banner
+
+# Add optional filters to the defaults
+scans2any --nmap scan.xml --enable-filters empty_host ip_port --ip-allowlist 10.0.0.0-10.0.255.255
+
+# Remove a default filter
+scans2any --nmap scan.xml --disable-filters trash_banner
+```
+
+Run `scans2any -L` (or `--list-filters`) to see all available filters with their descriptions and options at runtime.
+
+## Filter reference
+
+<AccordionGroup>
+  <Accordion title="column_filter — filter by column regex">
+    **Priority:** 1
+
+    **Applies to:** Host and Service
+
+    **Enabled by default:** No (activated via `-C`, `-Cv`, or `-Ch`)
+
+    Filters hosts and services by regex patterns matched against named columns or all columns at once. Multiple patterns are ANDed. This is the engine behind the `-C`, `-Cv`, and `-Ch` shorthands.
+
+    **When to use:** When you want to keep only hosts or services where a particular field contains (or explicitly does not contain) a given pattern.
+
+    **Syntax:**
+
+    | Spec | Meaning |
+    |------|---------|
+    | `col:regex` | Keep if column `col` matches `regex` |
+    | `col:!regex` | Keep if column `col` does **not** match (negation) |
+    | `regex` | Keep if **any** column matches |
+    | `!regex` | Keep if **no** column matches (global negation) |
+
+    Prefix with `(?i)` for case-insensitive matching.
+
+    **Valid column names:**
+    - Host-level: `IP-Addresses`, `Hostnames`, `OS`
+    - Service-level: `Ports`, `Services`, `Banners`, plus parser-specific columns such as `http_status` and `Vulnerability-Type`
+
+    **Modes:**
+
+    | Mode | Flag | Behavior |
+    |------|------|----------|
+    | Normal | `-C` | A service is kept when its own fields satisfy the pattern, or the host-level fields do. All services of a matching host survive. |
+    | Value mode | `-Cv` | Each service must independently satisfy every global pattern. Multi-value fields (`Banners`, `Services`, etc.) are trimmed to only matching entries. |
+    | Host mode | `-Ch` | If the host or any of its services satisfies the patterns, the entire host is kept with all services intact. |
+
+    **CLI options:**
+
+    ```bash
+    # Keep only services named "http" or "https" (case-insensitive)
+    scans2any --nmap scan.xml -C Services:(?i)http
+
+    # Keep hosts/services containing "192.168.1"
+    scans2any --nmap scan.xml -C 192\.168\.1
+
+    # Drop services whose banner contains "N/A"
+    scans2any --nmap scan.xml -C Banners:!N/A
+
+    # Chain multiple patterns (AND logic)
+    scans2any --nmap scan.xml -C Services:(?i)http Banners:!N/A
+
+    # Value mode: trim multi-value fields to only matching entries
+    scans2any --nmap scan.xml -Cv 192\.168\.1
+
+    # Host mode: keep entire host if any service has port 22
+    scans2any --nmap scan.xml -Ch Ports:22
+    ```
+  </Accordion>
+
+  <Accordion title="nmap_banner — normalize Nmap banners">
+    **Priority:** 1
+
+    **Applies to:** Service
+
+    **Enabled by default:** Yes
+
+    Reformats Nmap-style banner dictionaries (which contain key-value pairs like `product`, `version`, `extrainfo`, and `devicetype`) into a clean `product/version (devicetype)` string.
+
+    **When to use:** Always when working with Nmap data. The default filter chain includes this filter automatically.
+
+    **Before:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+        - Banner: "product: Apache version: 2.4.46 extrainfo: (Ubuntu)"
+    ```
+
+    **After:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+        - Banner: "Apache/2.4.46"
+    ```
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters nmap_banner
+    ```
+  </Accordion>
+
+  <Accordion title="ip_port — filter by IP and port ranges">
+    **Priority:** 1
+
+    **Applies to:** Host and Service
+
+    **Enabled by default:** No
+
+    Filters hosts and services based on IP address ranges and port ranges. Accepts CIDR-style ranges and hyphen-delimited ranges.
+
+    **When to use:** When you want to scope output to a specific subnet, exclude management ranges, or focus on particular port ranges.
+
+    **CLI options:**
+
+    | Option | Description |
+    |--------|-------------|
+    | `--ip-allowlist` | Keep only hosts in the specified IP ranges |
+    | `--ip-blocklist` | Exclude hosts in the specified IP ranges |
+    | `--port-allowlist` | Keep only services with ports in the specified ranges |
+    | `--port-blocklist` | Exclude services with ports in the specified ranges |
+
+    **Example:**
+
+    ```bash
+    # Keep only hosts in a specific range with ports 80-443
+    scans2any --nmap scan.xml --enable-filters ip_port \
+      --ip-allowlist 10.0.1.0-10.0.1.255 \
+      --port-allowlist 80-443
+    ```
+
+    ```bash
+    # Exclude an IP range and low ports
+    scans2any --nmap scan.xml --enable-filters ip_port \
+      --ip-blocklist 192.168.5.0-192.168.5.255 \
+      --port-blocklist 1-1024
+    ```
+  </Accordion>
+
+  <Accordion title="trash_banner — clean up uninformative banners">
+    **Priority:** 2
+
+    **Applies to:** Service
+
+    **Enabled by default:** Yes
+
+    Removes banners that match a list of common uninformative strings (such as `"unknown"`, `"Not Found"`, and HTTP error codes), then removes any banner that is a substring of another banner to reduce redundancy.
+
+    **When to use:** Always, to reduce noise in banner output. Included in the default filter chain.
+
+    **Before:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+        - Banner: "Not Found"
+        - Banner: "Apache"
+        - Banner: "Apache Web Server"
+    ```
+
+    **After:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+        - Banner: "Apache Web Server"
+    ```
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters trash_banner
+    ```
+  </Accordion>
+
+  <Accordion title="trash_hostname — remove redundant hostnames">
+    **Priority:** 2
+
+    **Applies to:** Host
+
+    **Enabled by default:** Yes
+
+    Removes hostnames that are a proper prefix of another hostname present on the same host. For example, if both `example.com` and `www.example.com` are recorded, `example.com` is removed because it is a prefix of `www.example.com` followed by a dot.
+
+    **When to use:** When hostname lists contain both a root domain and its subdomains, and you want only the more specific entries. Included in the default filter chain.
+
+    **Before:**
+
+    ```text
+    Host: 192.168.1.1
+      - Hostnames: example.com, www.example.com, mail.example.com
+    ```
+
+    **After:**
+
+    ```text
+    Host: 192.168.1.1
+      - Hostnames: www.example.com, mail.example.com
+    ```
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters trash_hostname
+    ```
+  </Accordion>
+
+  <Accordion title="trash_service_name — normalize service names">
+    **Priority:** 2
+
+    **Applies to:** Service
+
+    **Enabled by default:** Yes
+
+    Removes uninformative service names such as `""`, `"unknown"`, and `"tcpwrapped"`. Filters out generic names like `"www"` when more specific names are also present. Combines related service names such as `"http"` and another protocol into `"http/protocol"`.
+
+    **When to use:** Always, to clean up service names from noisy scan output. Included in the default filter chain.
+
+    **Before:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http, www, unknown
+      - Port 443: https, ssl
+    ```
+
+    **After:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+      - Port 443: https/ssl
+    ```
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters trash_service_name
+    ```
+  </Accordion>
+
+  <Accordion title="combine_banner — merge multiple banners into one">
+    **Priority:** 3
+
+    **Applies to:** Service
+
+    **Enabled by default:** Yes
+
+    Combines multiple banners for a service into a single string joined with ` | `. Banners longer than 50 characters are dropped before combining unless they are the only banner present.
+
+    **When to use:** When a service has multiple short banners and you want a single consolidated entry in the output. Included in the default filter chain.
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters combine_banner
+    ```
+
+    A service with banners `["nginx", "1.18.0"]` becomes `"nginx | 1.18.0"`.
+  </Accordion>
+
+  <Accordion title="empty_service — remove unidentified services">
+    **Priority:** 3
+
+    **Applies to:** Service
+
+    **Enabled by default:** No
+
+    Removes services that have neither a service name nor a banner. Keeps only services where at least one of those fields is populated.
+
+    **When to use:** When your scans contain many open-but-unidentified ports that you want to exclude from the report.
+
+    **Before:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 22: ssh
+      - Port 12345: (no service name or banner)
+    ```
+
+    **After:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 22: ssh
+    ```
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters empty_service
+    ```
+  </Accordion>
+
+  <Accordion title="hosts_file_filter — filter by IP/hostname list">
+    **Priority:** 3
+
+    **Applies to:** Host
+
+    **Enabled by default:** No (activated automatically when `--hosts-file` is provided)
+
+    Keeps only hosts whose IP address or hostname appears in a file you supply. Blank lines and lines beginning with `#` are ignored.
+
+    **When to use:** When you have a defined list of in-scope targets and want to restrict output to only those hosts.
+
+    **CLI option:**
+
+    | Option | Description |
+    |--------|-------------|
+    | `--hosts-file filename` | Path to the file containing allowed IPs or hostnames (one per line) |
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml --hosts-file targets.txt
+    ```
+
+    Where `targets.txt` contains:
+
+    ```text
+    10.0.0.1
+    10.0.0.10
+    web.internal
+    # this line is ignored
+    ```
+  </Accordion>
+
+  <Accordion title="empty_host — remove hosts with no meaningful services">
+    **Priority:** 4
+
+    **Applies to:** Host
+
+    **Enabled by default:** No
+
+    Removes hosts that have no services at all, or that have only a single service with an uninformative name (`""` or `"ident"`).
+
+    **When to use:** When you want to exclude hosts that responded to a ping or port scan but had no identifiable services.
+
+    **Before:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 113: ident
+
+    Host: 192.168.1.2
+      - Port 80: http
+      - Port 443: https
+    ```
+
+    **After:**
+
+    ```text
+    Host: 192.168.1.2
+      - Port 80: http
+      - Port 443: https
+    ```
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters empty_host
+    ```
+  </Accordion>
+
+  <Accordion title="use_first_entry — resolve conflicts by first value">
+    **Priority:** 5
+
+    **Applies to:** Service and Host
+
+    **Enabled by default:** No
+
+    Resolves remaining multi-value conflicts by keeping only the first entry for banners, service names, and OS information. This is a blunt instrument — use it only when you need a single deterministic value and other conflict resolution options have not fully converged.
+
+    **When to use:** As a last resort when you have persistent multi-value fields and want to force a single output without manually editing a merge file.
+
+    **Before:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http, www-http
+      - OS: Windows Server 2019, Windows 10
+    ```
+
+    **After:**
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+      - OS: Windows Server 2019
+    ```
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters use_first_entry
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Filter chain examples
+
+```bash
+# Minimal clean output: remove empty hosts, normalize names and banners
+scans2any --nmap scan.xml --filters empty_host trash_service_name trash_banner
+```
+
+```bash
+# Focus on web services only
+scans2any --nmap scan.xml -C Services:(?i)http
+```
+
+```bash
+# Clean output scoped to a specific network range
+scans2any --nmap scan.xml \
+  --filters trash_banner trash_hostname trash_service_name nmap_banner \
+  --enable-filters ip_port \
+  --ip-allowlist 192.168.1.0-192.168.1.255
+```
+
+## Priority reference
+
+| Filter | Priority | Default | Applies to |
+|--------|----------|---------|------------|
+| `column_filter` | 1 | No | Host, Service |
+| `nmap_banner` | 1 | **Yes** | Service |
+| `ip_port` | 1 | No | Host, Service |
+| `trash_banner` | 2 | **Yes** | Service |
+| `trash_hostname` | 2 | **Yes** | Host |
+| `trash_service_name` | 2 | **Yes** | Service |
+| `combine_banner` | 3 | **Yes** | Service |
+| `empty_service` | 3 | No | Service |
+| `hosts_file_filter` | 3 | No | Host |
+| `empty_host` | 4 | No | Host |
+| `use_first_entry` | 5 | No | Service, Host |

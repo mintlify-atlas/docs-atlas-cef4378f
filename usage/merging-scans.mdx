@@ -1,0 +1,119 @@
+---
+title: "Merge scans and resolve conflicting infrastructure data"
+description: "Learn how scans2any detects unresolvable conflicts across scan sources and how to fix them manually using MERGE_FILE.yaml and the buffer file."
+---
+
+When scans2any combines multiple input files, it merges all data into a single infrastructure model. Most conflicts — such as when two scans agree on a service name but differ in banner formatting — are resolved automatically using built-in rules. Some conflicts, however, cannot be resolved without human judgment: for example, two scans that report completely different service names for the same port.
+
+When unresolvable conflicts are detected, scans2any creates a `MERGE_FILE.yaml` containing the conflicting entries and pauses output. You edit the file to pick the correct values, then re-run scans2any with the merge file to get a clean result.
+
+## What triggers a conflict
+
+A conflict occurs when the same port on the same host has two values for a field that can only hold one — most commonly, two different service names. Multiple service names for the same port are not permitted, so scans2any cannot pick one automatically.
+
+## Full merge workflow
+
+<Steps>
+  <Step title="Create two conflicting input files">
+    For illustration, consider two JSON files that describe the same host with the same port but different service names:
+
+    **one.json**:
+
+    ```json
+    { "1.1.1.1":{ "tcp_ports":{ "22":{ "service_names":[ "ssh" ] } } } }
+    ```
+
+    **two.json**:
+
+    ```json
+    { "1.1.1.1":{ "tcp_ports":{ "22":{ "service_names":[ "openssh" ] } } } }
+    ```
+  </Step>
+
+  <Step title="Run scans2any and observe the conflict">
+    ```bash
+    scans2any --json one.json two.json
+    ```
+
+    scans2any detects that port 22 on `1.1.1.1` has two service names and cannot resolve the conflict automatically:
+
+    ```text
+    [...]
+    Checking for Remaining Conflicts
+    [ ! ] Conflicts found in infrastructure.
+    [ ! ] One or multiple unresolvable conflicts have been identified. A Mergefile has been written to 'MERGE_FILE.yaml' and a JSON Bufferfile has been written to 'BUFFER_FILE.json'.
+    Please edit the Mergefile to resolve the issues and then continue with: scans2any --merge-file MERGE_FILE.yaml --json BUFFER_FILE.json.
+    For further documentation refer to: https://github.com/softScheck/scans2any/blob/main/docs/tutorial.md#merge-file
+    ```
+
+    Two files are created:
+    - **`MERGE_FILE.yaml`** — contains the conflicting data for you to edit
+    - **`BUFFER_FILE.json`** — contains the fully-parsed infrastructure up to the point of conflict
+  </Step>
+
+  <Step title="Edit MERGE_FILE.yaml to resolve the conflict">
+    Open `MERGE_FILE.yaml` and remove the entry you want to discard. In this example, remove either `- ssh` or `- openssh` so that only one service name remains for port 22.
+
+    Save the file when done.
+  </Step>
+
+  <Step title="Re-run scans2any with the merge file">
+    **Option A — use the buffer file for speed:**
+
+    ```bash
+    scans2any --json BUFFER_FILE.json --merge-file MERGE_FILE.yaml
+    ```
+
+    The buffer file contains all parsed data, so scans2any skips re-parsing the originals and runs faster.
+
+    **Option B — re-parse the originals with the merge file applied:**
+
+    ```bash
+    scans2any --json one.json two.json --merge-file MERGE_FILE.yaml
+    ```
+
+    This is slower but more transparent: anyone with the original scan files and the merge file can reproduce the result.
+
+    Both options produce identical output given the same input.
+  </Step>
+</Steps>
+
+## Using `--ignore-conflicts`
+
+If you do not care about conflict resolution and want scans2any to proceed without checking or creating a merge file, pass `--ignore-conflicts`:
+
+```bash
+scans2any --nmap scan1.xml --nmap scan2.xml --ignore-conflicts
+```
+
+<Warning>
+  With `--ignore-conflicts`, conflicting values are not resolved and the output may contain ambiguous or duplicated data for affected hosts.
+</Warning>
+
+## Using `--no-auto-merge`
+
+By default, scans2any applies internal auto-merge rules before escalating to a manual merge file. To skip all automatic resolution and see every conflict in the merge file:
+
+```bash
+scans2any --nmap scan.xml --no-auto-merge
+```
+
+This is useful when you want full control over conflict resolution without relying on built-in heuristics.
+
+## Buffer file tradeoffs
+
+The buffer file stores all parsed and partially-combined results up to the point where the conflict was detected. Using it on the next run avoids re-parsing potentially large scan files.
+
+**Use the buffer file when:**
+- Your scans are large or numerous and re-parsing is slow.
+- You are iterating on a merge file and need fast feedback.
+
+**Avoid the buffer file when:**
+- You want to share a fully reproducible command with colleagues. They only need the original scan files and the merge file — not the buffer.
+- Your scan files are actively changing and you always want the latest data.
+
+The buffer file path defaults to `BUFFER_FILE.json`. You can override it with `--buffer-file`:
+
+```bash
+scans2any --json one.json two.json --buffer-file my_buffer.json
+```

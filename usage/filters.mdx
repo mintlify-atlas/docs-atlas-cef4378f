@@ -1,0 +1,286 @@
+---
+title: "Filter and clean up infrastructure scan data in scans2any"
+description: "Use built-in and optional filters to normalize service names, remove uninformative banners, deduplicate hostnames, and drop empty or unidentified hosts."
+---
+
+Filters run after scans are parsed and combined, but before any output is written. They transform the unified infrastructure model in place — normalizing noisy data, collapsing redundant entries, and removing uninformative results that would clutter your report.
+
+scans2any applies a default filter chain automatically. You can override it completely, extend it with additional filters, or disable individual filters depending on your needs. Run `scans2any -L` to see every available filter with its description and priority.
+
+## Controlling filters
+
+### Override the entire filter chain
+
+Replace the default filters with exactly the ones you specify:
+
+```bash
+scans2any --nmap scan.xml --filters trash_banner nmap_banner
+```
+
+### Add filters to the default chain
+
+Enable additional filters on top of the defaults:
+
+```bash
+scans2any --nmap scan.xml --enable-filters empty_host
+```
+
+```bash
+scans2any --nmap scan.xml -F empty_host empty_service
+```
+
+### Disable specific default filters
+
+Keep the default chain but remove one or more filters from it:
+
+```bash
+scans2any --nmap scan.xml --disable-filters nmap_banner
+```
+
+```bash
+scans2any --nmap scan.xml --disable-filters trash_banner trash_hostname
+```
+
+## Default filters
+
+The following five filters run by default on every invocation:
+
+<AccordionGroup>
+  <Accordion title="trash_banner — remove uninformative banners">
+    **Priority:** 2
+
+    Removes banners that match a list of common uninformative strings (such as `"unknown"`, `"Not Found"`, HTTP error codes) and drops banners that are substrings of other banners for the same service. The result is a shorter, more meaningful banner list.
+
+    Before:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+        - Banner: "Not Found"
+        - Banner: "Apache"
+        - Banner: "Apache Web Server"
+    ```
+
+    After:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+        - Banner: "Apache Web Server"
+    ```
+  </Accordion>
+
+  <Accordion title="trash_service_name — normalize service names">
+    **Priority:** 2
+
+    Removes uninformative service names (`""`, `"unknown"`, `"tcpwrapped"`), strips less-useful names like `"www"` when other names are present, and merges related names like `"http"` and a secondary service into `"http/service"`.
+
+    Before:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http, www, unknown
+      - Port 443: https, ssl
+    ```
+
+    After:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+      - Port 443: https/ssl
+    ```
+  </Accordion>
+
+  <Accordion title="trash_hostname — remove redundant subdomains">
+    **Priority:** 2
+
+    Removes a hostname when it is a strict prefix of another hostname for the same host. For example, if both `example.com` and `www.example.com` are present, `example.com` is dropped because it's implied by the more specific name.
+
+    Before:
+
+    ```text
+    Host: 192.168.1.1
+      - Hostnames: example.com, www.example.com, mail.example.com
+    ```
+
+    After:
+
+    ```text
+    Host: 192.168.1.1
+      - Hostnames: www.example.com, mail.example.com
+    ```
+  </Accordion>
+
+  <Accordion title="combine_banner — reduce banner redundancy">
+    **Priority:** 3
+
+    Collapses multiple banners for a service into a single string joined with ` | `. Banners longer than 50 characters are dropped before combining unless they are the only banner present.
+  </Accordion>
+
+  <Accordion title="nmap_banner — reformat Nmap banner data">
+    **Priority:** 1
+
+    Parses Nmap-style banner strings (which contain structured keys like `"product"`, `"version"`, `"extrainfo"`) and reformats them into the compact `product/version (devicetype)` form.
+
+    Before:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+        - Banner: "product: Apache version: 2.4.46 extrainfo: (Ubuntu)"
+    ```
+
+    After:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+        - Banner: "Apache/2.4.46"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Optional filters
+
+These filters are not enabled by default. Enable them with `--enable-filters` / `-F`.
+
+<AccordionGroup>
+  <Accordion title="empty_host — remove hosts with no meaningful services">
+    **Priority:** 4
+
+    Removes hosts that have no identified open ports or only have the trivial `ident` service. Use this to clean up scan results that include hosts with no actionable findings.
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters empty_host
+    ```
+
+    Before:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 113: ident
+
+    Host: 192.168.1.2
+      - Port 80: http
+      - Port 443: https
+    ```
+
+    After:
+
+    ```text
+    Host: 192.168.1.2
+      - Port 80: http
+      - Port 443: https
+    ```
+  </Accordion>
+
+  <Accordion title="empty_service — remove unidentified open ports">
+    **Priority:** 3
+
+    Removes services that have neither a banner nor a service name — ports that were found open but could not be identified. Keeps only services with at least one piece of identifying information.
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters empty_service
+    ```
+
+    Before:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 22: ssh
+      - Port 12345: (no service name or banner)
+    ```
+
+    After:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 22: ssh
+    ```
+  </Accordion>
+
+  <Accordion title="ip_port — filter by IP range and port range">
+    **Priority:** 1
+
+    Keeps or excludes hosts and services based on IP address ranges and port ranges. Accepts four arguments:
+
+    - `--ip-allowlist` — keep only hosts in this IP range
+    - `--ip-blocklist` — exclude hosts in this IP range
+    - `--port-allowlist` — keep only services with ports in this range
+    - `--port-blocklist` — exclude services with ports in this range
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters ip_port \
+      --ip-allowlist 10.0.1.0-10.0.1.255 --port-allowlist 80-443
+    ```
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters ip_port \
+      --ip-blocklist 192.168.5.0-192.168.5.255 --port-blocklist 1-1024
+    ```
+  </Accordion>
+
+  <Accordion title="hosts_file_filter — filter by a list of target hosts">
+    **Priority:** 3
+
+    Reads a file of IP addresses or hostnames (one per line, `#` comments and blank lines ignored) and keeps only hosts that appear in that list.
+
+    ```bash
+    scans2any --nmap scan.xml --hosts-file targets.txt
+    ```
+  </Accordion>
+
+  <Accordion title="use_first_entry — resolve conflicts by picking the first value">
+    **Priority:** 5
+
+    When a service has multiple conflicting banners or service names, keeps only the first one. Also applies to OS information. Use this as a last resort when other conflict resolution strategies are insufficient.
+
+    ```bash
+    scans2any --nmap scan.xml --enable-filters use_first_entry
+    ```
+
+    Before:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http, www-http
+      - OS: Windows Server 2019, Windows 10
+    ```
+
+    After:
+
+    ```text
+    Host: 192.168.1.1
+      - Port 80: http
+      - OS: Windows Server 2019
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Filter chain examples
+
+### Minimal clean output
+
+```bash
+scans2any --nmap scan.xml --filters empty_host trash_service_name trash_banner
+```
+
+### Focus on web services
+
+```bash
+scans2any --nmap scan.xml -C Services:(?i)http
+```
+
+### Clean output for a specific network range
+
+```bash
+scans2any --nmap scan.xml \
+  --filters trash_banner trash_hostname trash_service_name nmap_banner \
+  --enable-filters ip_port \
+  --ip-allowlist 192.168.1.0-192.168.1.255
+```
+
+<Tip>
+  Run `scans2any -L` to see the full list of available filters, their priorities, and any additional options they support.
+</Tip>

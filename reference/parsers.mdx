@@ -1,0 +1,252 @@
+---
+title: "Input parsers: supported scan formats"
+description: "Every parser scans2any supports, the file formats and tools each one handles, expected extensions, and how auto-detection picks the right parser."
+---
+
+scans2any includes a parser for each supported input tool. Every parser reads one or more files, extracts hosts, services, ports, banners, and OS information, and returns a unified `Infrastructure` object that gets merged with all other inputs. You can supply files from multiple parsers in a single invocation.
+
+<Note>
+  At least one input flag is required. Each input flag accepts one or more file paths or a directory path. When you pass a directory, scans2any searches it for files matching the parser's expected extension.
+</Note>
+
+## Auto-detection
+
+The `--auto` (`-a`) flag lets you point scans2any at a file or directory without specifying the format. It iterates through all available parsers, checks whether the file extension matches the parser's accepted extensions, attempts to parse the file, and uses the first parser that returns a non-empty result.
+
+```bash
+# Auto-detect all scan files in a directory
+scans2any -a /path/to/scans/
+
+# Auto-detect a single file
+scans2any -a results/
+```
+
+<Warning>
+  Auto-detection relies on file extensions and successful parsing. Files with ambiguous extensions (e.g., `.json` is used by Aquatone, Masscan, Bloodhound, and the scans2any JSON format) will be tried against each matching parser in turn. If multiple parsers could handle a file, the first one to return a non-empty result wins. Use explicit flags to avoid ambiguity.
+</Warning>
+
+## Parsers
+
+<AccordionGroup>
+  <Accordion title="Nmap — --nmap">
+    **Tool:** [Nmap](https://nmap.org/)
+
+    **CLI flag:** `--nmap filename/directory [...]`
+
+    **File format:** XML (`.xml`), generated with `nmap -oX` or `nmap -oA`
+
+    **What it extracts:**
+    - IP addresses
+    - Hostnames (from scan results, TLS certificate `commonName` fields, and Nmap script results such as `DNS_Computer_Name` and `fqdn`)
+    - OS fingerprints (matches with accuracy ≥ 92% are accepted)
+    - TCP and UDP services with port numbers, service names, and banners
+    - UDP ports with state `open|filtered` are excluded (only confirmed `open` UDP ports are included)
+
+    Supports incomplete or aborted Nmap scan files via the `incomplete=True` parsing mode.
+
+    **Example:**
+
+    ```bash
+    scans2any --nmap tcp_scan.xml --nmap udp_scan.xml -w markdown
+    ```
+
+    ```bash
+    # Combine Nmap with another scanner
+    scans2any --nmap scan.xml --nessus scan.nessus -w yaml -o report.yml
+    ```
+  </Accordion>
+
+  <Accordion title="Nessus — --nessus">
+    **Tool:** [Nessus](https://www.tenable.com/products/nessus)
+
+    **CLI flag:** `--nessus filename/directory [...]`
+
+    **File format:** `.nessus` (Nessus report v2 XML format)
+
+    **What it extracts:**
+    - IP addresses and FQDNs
+    - OS detection (from `operating-system`, `os`, `ssh-fingerprint`, and SinFP ML predictions with confidence ≥ 90%)
+    - Services with port numbers and protocols
+    - Banners for HTTP services (`HTTP Server Type and Version`) and SSH services (`SSH Server Type and Version Information`)
+    - Vulnerability types from plugin names for findings with severity ≥ 2, exposed via the `Vulnerability-Type` column
+    - Additional DNS hostnames from the `Additional DNS Hostnames` plugin
+
+    **Custom column:** `Vulnerability-Type` — request it with `-c IP-Addresses,Ports,Services,Vulnerability-Type`
+
+    **Example:**
+
+    ```bash
+    scans2any --nessus scan.nessus -w terminal
+    ```
+
+    ```bash
+    # Show vulnerability types alongside services
+    scans2any --nessus scan.nessus -c IP-Addresses,Hostnames,Ports,Services,Vulnerability-Type
+    ```
+  </Accordion>
+
+  <Accordion title="Masscan — --masscan">
+    **Tool:** [Masscan](https://github.com/robertdavidgraham/masscan)
+
+    **CLI flag:** `--masscan filename/directory [...]`
+
+    **File format:** JSON (`.json`), generated with `masscan -oJ`
+
+    **What it extracts:**
+    - IP addresses
+    - Open ports with protocol (TCP/UDP)
+
+    Masscan output does not include service names, banners, hostnames, or OS information. It is best combined with Nmap or Nessus results to enrich the port data.
+
+    **Example:**
+
+    ```bash
+    masscan -p0-65535 192.168.0.0/16 -oJ masscan.json
+    scans2any --masscan masscan.json --nmap followup.xml -w csv -o results.csv
+    ```
+  </Accordion>
+
+  <Accordion title="Aquatone — --aquatone">
+    **Tool:** [Aquatone](https://github.com/shelld3v/aquatone)
+
+    **CLI flag:** `--aquatone filename/directory [...]`
+
+    **File format:** JSON (`.json`), the `aquatone_session.json` session file
+
+    **What it extracts:**
+    - Hostnames and IP addresses from the `pages` array
+    - HTTP and HTTPS services with port numbers
+    - Page titles and `Server` response headers as banners
+    - HTTP status codes (first three characters), exposed via the `http_status` column
+
+    Aquatone data is trusted for protocol and service name fields, so these values won't be overridden during conflict resolution.
+
+    **Custom column:** `http_status` — request it with `-c IP-Addresses,Hostnames,Ports,http_status`
+
+    **Example:**
+
+    ```bash
+    scans2any --aquatone aquatone_session.json -w aquatone
+    ```
+
+    ```bash
+    # Show HTTP status codes
+    scans2any --aquatone aquatone_session.json -c IP-Addresses,Hostnames,Ports,Services,http_status
+    ```
+  </Accordion>
+
+  <Accordion title="Bloodhound — --bloodhound">
+    **Tool:** [BloodHound](https://github.com/BloodHoundAD/BloodHound)
+
+    **CLI flag:** `--bloodhound filename/directory [...]`
+
+    **File format:** JSON (`.json`), the computers export from BloodHound
+
+    **What it extracts:**
+    - Hostnames (from the `Properties.name` field, lowercased)
+    - OS information (mapped to a normalized OS string)
+
+    Bloodhound data does **not** include IP addresses, ports, or services. It is most useful when combined with Nmap or Nessus results to annotate hosts with AD-derived OS information.
+
+    Bloodhound hostname and OS data is trusted and will not be overridden during conflict resolution.
+
+    **Example:**
+
+    ```bash
+    scans2any --bloodhound computers.json --nmap scan.xml -w terminal
+    ```
+  </Accordion>
+
+  <Accordion title="NetExec / CrackMapExec — --nxc">
+    **Tool:** [NetExec](https://github.com/Pennyw0rth/NetExec) (formerly CrackMapExec)
+
+    **CLI flag:** `--nxc filename/directory [...]`
+
+    **File format:** SQLite database (`.db`), the `SMB.db` file from NetExec
+
+    **What it extracts:**
+    - IP addresses and hostnames
+    - OS information
+    - SMB service on port 445/tcp with banners indicating:
+      - `SMB Signing disabled!` when signing is off
+      - `SMBv1 enabled!` when SMBv1 is active
+
+    Protocol and service name data from NetExec is trusted and won't be overridden during merging.
+
+    **Example:**
+
+    ```bash
+    scans2any --nxc SMB.db -w terminal
+    ```
+
+    ```bash
+    scans2any --nxc SMB.db --nmap scan.xml -w markdown -o smb-report.md
+    ```
+  </Accordion>
+
+  <Accordion title="JSON (scans2any format) — --json">
+    **Source:** scans2any's own JSON writer (`-w json`)
+
+    **CLI flag:** `--json filename/directory [...]`
+
+    **File format:** JSON (`.json`), the output of `scans2any -w json`
+
+    **What it extracts:**
+    - Full infrastructure: IP addresses, hostnames, OS, TCP ports, UDP ports, service names, banners, and any custom fields
+
+    This is the only round-trippable format. Export once to JSON to cache a slow multi-file parse, then re-import the JSON for fast re-querying with different filters or output formats. The JSON parser accepts arbitrary custom column names because it reads key-value pairs dynamically.
+
+    **Example:**
+
+    ```bash
+    # Export combined result to JSON
+    scans2any -a /path/to/all/scans -w json -o combined.json
+
+    # Re-import and reformat without re-parsing originals
+    scans2any --json combined.json -w html -o report.html
+    scans2any --json combined.json -c IP-Addresses,Services -C Services:https
+    ```
+  </Accordion>
+
+  <Accordion title="Plain text — --txt">
+    **CLI flag:** `--txt filename/directory [...]`
+
+    **File format:** Plain text (`.txt`)
+
+    **What it extracts:**
+    - IP-to-hostname mappings
+
+    Accepts two line formats:
+    - `/etc/hosts` style: `IP hostname1 hostname2 ...`
+    - Reverse style: `hostname IP`
+
+    Only valid IP addresses and DNS-matching hostnames are accepted; other tokens on a line are ignored.
+
+    **Example:**
+
+    ```bash
+    scans2any --txt hosts.txt --nmap scan.xml -w terminal
+    ```
+
+    Where `hosts.txt` contains:
+
+    ```text
+    10.0.0.1 router.internal
+    10.0.0.10 web.internal api.internal
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Extension reference
+
+| Parser | CLI flag | Extensions |
+|--------|----------|------------|
+| Nmap | `--nmap` | `.xml` |
+| Nessus | `--nessus` | `.nessus` |
+| Masscan | `--masscan` | `.json` |
+| Aquatone | `--aquatone` | `.json` |
+| Bloodhound | `--bloodhound` | `.json` |
+| NetExec | `--nxc` | `.db` |
+| JSON (scans2any) | `--json` | `.json` |
+| Plain text | `--txt` | `.txt` |
+| Auto | `-a / --auto` | (all of the above) |

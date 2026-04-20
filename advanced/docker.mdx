@@ -1,0 +1,112 @@
+---
+title: "Run scans2any in Docker"
+description: "Build and run scans2any inside a container using the included Dockerfile — no local Python environment needed, ideal for CI/CD pipelines."
+---
+
+The included `Dockerfile` lets you run scans2any without installing Python or any dependencies on your machine. You mount a directory containing your scan files into the container and scans2any processes them exactly as it would locally. This is particularly useful in CI/CD pipelines, shared environments, or anywhere you want strict isolation from the host system.
+
+## Build the image
+
+Clone the repository (or copy the `Dockerfile`) and build the image once:
+
+```bash
+docker build -t scans2any .
+```
+
+The build process installs all dependencies into the container using `uv`. You only need to repeat this step when you update scans2any.
+
+## Run with a volume mount
+
+scans2any reads files from `/data` inside the container. Mount your local directory there with `-v`:
+
+```bash
+docker run -v $(pwd):/data scans2any
+```
+
+This runs the default command (`--help`) using the files in your current directory. Pass any scans2any arguments after the image name.
+
+## Full example: process scans and save output
+
+The following command mounts the current directory, auto-detects all scan files in it, and writes JSON output to `result.json` in the same directory:
+
+```bash
+docker run -v $(pwd):/data scans2any -a /data -w json -o /data/result.json
+```
+
+Breaking it down:
+
+- `-v $(pwd):/data` — mounts the current host directory at `/data` inside the container
+- `-a /data` — tells scans2any to auto-detect scan files in `/data`
+- `-w json` — selects the JSON output writer
+- `-o /data/result.json` — writes the result back to the mounted directory so it persists after the container exits
+
+<Note>
+Use absolute paths inside the container (prefixed with `/data/`) when specifying input files or output targets. The container's working directory is `/app`, not `/data`.
+</Note>
+
+## Passing specific scan files
+
+You can reference individual files by their path inside the mount:
+
+```bash
+docker run -v $(pwd):/data scans2any --nmap /data/tcp_scan.xml --nessus /data/vuln_scan.nessus -w markdown
+```
+
+## Dockerfile reference
+
+The full `Dockerfile` is reproduced below for reference:
+
+```dockerfile
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Set up working directory
+WORKDIR /app
+
+# Copy the application code
+COPY pyproject.toml uv.lock README.md src /app
+
+# Create a virtual environment and install dependencies
+RUN uv sync --no-cache-dir
+
+# Set the entrypoint
+ENTRYPOINT ["uv", "run", "--no-cache-dir", "scans2any"]
+CMD ["--help"]
+```
+
+The image is built on the official `uv` slim image for Python 3.13. The entrypoint calls `uv run scans2any` so the correct virtual environment is always used. The default `CMD` is `--help`, which prints usage when you run the container with no arguments.
+
+## When to prefer Docker
+
+<CardGroup cols={2}>
+
+<Card title="Zero local setup" icon="box">
+  No Python, uv, or pip installation needed. A working Docker daemon is the only requirement.
+</Card>
+
+<Card title="CI/CD pipelines" icon="arrows-rotate">
+  Run scans2any in GitHub Actions, GitLab CI, or any container-based pipeline without configuring a Python environment.
+</Card>
+
+<Card title="Isolation" icon="shield">
+  The container has no access to your filesystem beyond the mounted directory, which limits the blast radius of processing untrusted scan files.
+</Card>
+
+<Card title="Reproducibility" icon="lock">
+  The image pins a specific Python version and dependency lock file, so results are consistent across machines and over time.
+</Card>
+
+</CardGroup>
+
+<Tip>
+If you run scans2any frequently from Docker, add a shell alias to avoid retyping the volume flag:
+
+```bash
+alias scans2any='docker run -v $(pwd):/data scans2any'
+```
+</Tip>
